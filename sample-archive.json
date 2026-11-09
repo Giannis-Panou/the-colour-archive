@@ -1,0 +1,369 @@
+{
+  "app": "the-colour-archive",
+  "version": 1,
+  "exportedAt": "2026-11-09T10:09:57.995Z",
+  "mixes": [
+    {
+      "id": "56f18afd-3cc1-4d2b-9f66-b7fd828f6f63",
+      "name": "Dragon scale red",
+      "color": "#7e1f1c",
+      "notes": "Base coat for the wyrm's back scales. Two thin coats.",
+      "image": "",
+      "paints": [
+        {
+          "name": "Mephiston Red",
+          "brand": "Citadel",
+          "drops": "3",
+          "swatch": "#9a1115"
+        },
+        {
+          "name": "Abaddon Black",
+          "brand": "Citadel",
+          "drops": "1",
+          "swatch": "#231f20"
+        }
+      ],
+      "createdAt": "2026-11-07T10:00:00.000Z"
+    },
+    {
+      "id": "29394f72-0cfd-4417-90d8-4b812a89bc02",
+      "name": "Dragon belly gold",
+      "color": "#b88a3a",
+      "notes": "Belly plates. Shade the recesses afterwards.",
+      "image": "",
+      "paints": [
+        {
+          "name": "Balthasar Gold",
+          "brand": "Citadel",
+          "drops": "2",
+          "swatch": "#a47552"
+        },
+        {
+          "name": "Retributor Armour",
+          "brand": "Citadel",
+          "drops": "2",
+          "swatch": "#c39e51"
+        },
+        {
+          "name": "Agrax Earthshade",
+          "brand": "Citadel",
+          "drops": "1",
+          "swatch": "#5a4a2e"
+        }
+      ],
+      "createdAt": "2026-11-06T10:00:00.000Z"
+    },
+    {
+      "id": "d12fc5d1-b89d-4335-ac92-962d4cc64eab",
+      "name": "Ember glow",
+      "color": "#e0702a",
+      "notes": "Glazed over the mouth and eyes.",
+      "image": "",
+      "paints": [
+        {
+          "name": "Averland Sunset",
+          "brand": "Citadel",
+          "drops": "2",
+          "swatch": "#fbb81c"
+        },
+        {
+          "name": "Dragon Red",
+          "brand": "The Army Painter",
+          "drops": "1",
+          "swatch": "#b0212b"
+        }
+      ],
+      "createdAt": "2026-11-05T10:00:00.000Z"
+    },
+    {
+      "id": "8ade3e12-28ec-4f47-936a-a262a94c8496",
+      "name": "Weathered bronze",
+      "color": "#6f5a32",
+      "notes": "Horn tips and armour trim.",
+      "image": "",
+      "paints": [
+        {
+          "name": "Balthasar Gold",
+          "brand": "Citadel",
+          "drops": "3",
+          "swatch": "#a47552"
+        },
+        {
+          "name": "Nuln Oil",
+          "brand": "Citadel",
+          "drops": "1",
+          "swatch": "#14100e"
+        }
+      ],
+      "createdAt": "2026-11-03T10:00:00.000Z"
+    },
+    {
+      "id": "717f3541-10a2-43c4-ba67-637307f3e552",
+      "name": "Mossy stone",
+      "color": "#5d6b3c",
+      "notes": "Drybrush on rocks, then a light Wraithbone edge.",
+      "image": "",
+      "paints": [
+        {
+          "name": "Greenskin",
+          "brand": "The Army Painter",
+          "drops": "3",
+          "swatch": "#2c6e3a"
+        },
+        {
+          "name": "Flat Earth",
+          "brand": "Vallejo",
+          "drops": "2",
+          "swatch": "#7e5d3d"
+        },
+        {
+          "name": "Matt Black",
+          "brand": "The Army Painter",
+          "drops": "1",
+          "swatch": "#000000"
+        }
+      ],
+      "createdAt": "2026-11-01T10:00:00.000Z"
+    },
+    {
+      "id": "86311dec-c2f8-4175-a0b8-1085cb6ffe44",
+      "name": "Forest floor",
+      "color": "#4a3a26",
+      "notes": "Base texture before static grass.",
+      "image": "",
+      "paints": [
+        {
+          "name": "Rhinox Hide",
+          "brand": "Citadel",
+          "drops": "3",
+          "swatch": "#493435"
+        },
+        {
+          "name": "Army Green",
+          "brand": "The Army Painter",
+          "drops": "1",
+          "swatch": "#555b39"
+        }
+      ],
+      "createdAt": "2026-10-31T10:00:00.000Z"
+    },
+    {
+      "id": "366eb2fe-26ce-48ea-aad0-68e989d3935d",
+      "name": "Dead grass tufts",
+      "color": "#b5a16a",
+      "notes": "",
+      "image": "",
+      "paints": [
+        {
+          "name": "Ushabti Bone",
+          "brand": "Citadel",
+          "drops": "2",
+          "swatch": "#bbbb7f"
+        },
+        {
+          "name": "Pale Sand",
+          "brand": "Vallejo",
+          "drops": "2",
+          "swatch": "#d6c69b"
+        },
+        {
+          "name": "Army Green",
+          "brand": "The Army Painter",
+          "drops": "1",
+          "swatch": "#555b39"
+        }
+      ],
+      "createdAt": "2026-10-30T10:00:00.000Z"
+    },
+    {
+      "id": "1fc25d78-6850-446a-b17c-51b17a059c9b",
+      "name": "Lichen highlight",
+      "color": "#8e9a5a",
+      "notes": "Dot onto stones sparingly.",
+      "image": "",
+      "paints": [
+        {
+          "name": "Elysian Green",
+          "brand": "Citadel",
+          "drops": "2",
+          "swatch": "#6c8e3a"
+        },
+        {
+          "name": "Wraithbone",
+          "brand": "Citadel",
+          "drops": "1",
+          "swatch": "#dbd1b2"
+        }
+      ],
+      "createdAt": "2026-10-29T10:00:00.000Z"
+    },
+    {
+      "id": "4ade2a56-339e-4a86-811b-0f06c85598ec",
+      "name": "Deep ocean blue",
+      "color": "#1f3550",
+      "notes": "Shadow layer for blue armour.",
+      "image": "",
+      "paints": [
+        {
+          "name": "Kantor Blue",
+          "brand": "Citadel",
+          "drops": "3",
+          "swatch": "#02134e"
+        },
+        {
+          "name": "Dark Sea Blue",
+          "brand": "Vallejo",
+          "drops": "1",
+          "swatch": "#2f4a5f"
+        }
+      ],
+      "createdAt": "2026-10-26T10:00:00.000Z"
+    },
+    {
+      "id": "34eae882-d223-4a3d-9a7e-177807da0b1c",
+      "name": "Ultramarine armour",
+      "color": "#2b4c8c",
+      "notes": "Main armour colour. Edge with Calgar Blue.",
+      "image": "",
+      "paints": [
+        {
+          "name": "Macragge Blue",
+          "brand": "Citadel",
+          "drops": "3",
+          "swatch": "#0d407f"
+        },
+        {
+          "name": "Ultramarine Blue",
+          "brand": "The Army Painter",
+          "drops": "1",
+          "swatch": "#2a4fa0"
+        }
+      ],
+      "createdAt": "2026-10-25T10:00:00.000Z"
+    },
+    {
+      "id": "a73a3949-2911-4286-b4d4-bb0c2f7d7a0e",
+      "name": "Icy edge highlight",
+      "color": "#8fb3d9",
+      "notes": "Fine edges and lens glints only.",
+      "image": "",
+      "paints": [
+        {
+          "name": "Macragge Blue",
+          "brand": "Citadel",
+          "drops": "1",
+          "swatch": "#0d407f"
+        },
+        {
+          "name": "Matt White",
+          "brand": "The Army Painter",
+          "drops": "3",
+          "swatch": "#ffffff"
+        }
+      ],
+      "createdAt": "2026-10-24T10:00:00.000Z"
+    },
+    {
+      "id": "093f365d-c217-42a7-8b1d-585106562042",
+      "name": "Gunmetal",
+      "color": "#5b6064",
+      "notes": "Bolters and backpack vents.",
+      "image": "",
+      "paints": [
+        {
+          "name": "Leadbelcher",
+          "brand": "Citadel",
+          "drops": "3",
+          "swatch": "#888d8f"
+        },
+        {
+          "name": "Nuln Oil",
+          "brand": "Citadel",
+          "drops": "1",
+          "swatch": "#14100e"
+        }
+      ],
+      "createdAt": "2026-10-22T10:00:00.000Z"
+    },
+    {
+      "id": "1405a606-6b60-412e-bfc6-f7b1b27acb49",
+      "name": "Old parchment",
+      "color": "#d8c79b",
+      "notes": "Purity seals and scrolls.",
+      "image": "",
+      "paints": [
+        {
+          "name": "Ushabti Bone",
+          "brand": "Citadel",
+          "drops": "2",
+          "swatch": "#bbbb7f"
+        },
+        {
+          "name": "Ivory",
+          "brand": "Vallejo",
+          "drops": "2",
+          "swatch": "#f1e7cf"
+        }
+      ],
+      "createdAt": "2026-10-20T10:00:00.000Z"
+    },
+    {
+      "id": "39a29c80-8b02-4c86-8200-784c43c8e615",
+      "name": "Warpstone glow",
+      "color": "#3f9e46",
+      "notes": "Lenses and plasma coils. Glaze onto a white base.",
+      "image": "",
+      "paints": [
+        {
+          "name": "Warpstone Glow",
+          "brand": "Citadel",
+          "drops": "2",
+          "swatch": "#1e7331"
+        },
+        {
+          "name": "Moot Green",
+          "brand": "Citadel",
+          "drops": "1",
+          "swatch": "#52b244"
+        }
+      ],
+      "createdAt": "2026-10-16T10:00:00.000Z"
+    }
+  ],
+  "collections": [
+    {
+      "id": "72f63e74-fa61-4c16-9a27-2b261390eae1",
+      "name": "Dragon commission",
+      "mixIds": [
+        "56f18afd-3cc1-4d2b-9f66-b7fd828f6f63",
+        "29394f72-0cfd-4417-90d8-4b812a89bc02",
+        "d12fc5d1-b89d-4335-ac92-962d4cc64eab",
+        "8ade3e12-28ec-4f47-936a-a262a94c8496"
+      ],
+      "createdAt": "2026-11-08T10:00:00.000Z"
+    },
+    {
+      "id": "c97286fd-6b2f-4b0a-bcdd-1f682412c87a",
+      "name": "Woodland bases",
+      "mixIds": [
+        "717f3541-10a2-43c4-ba67-637307f3e552",
+        "86311dec-c2f8-4175-a0b8-1085cb6ffe44",
+        "366eb2fe-26ce-48ea-aad0-68e989d3935d",
+        "1fc25d78-6850-446a-b17c-51b17a059c9b"
+      ],
+      "createdAt": "2026-11-02T10:00:00.000Z"
+    },
+    {
+      "id": "6067b5c8-41f1-4505-82ab-fed7eba83c35",
+      "name": "Ultramarines squad",
+      "mixIds": [
+        "4ade2a56-339e-4a86-811b-0f06c85598ec",
+        "34eae882-d223-4a3d-9a7e-177807da0b1c",
+        "a73a3949-2911-4286-b4d4-bb0c2f7d7a0e",
+        "093f365d-c217-42a7-8b1d-585106562042",
+        "1405a606-6b60-412e-bfc6-f7b1b27acb49"
+      ],
+      "createdAt": "2026-10-27T10:00:00.000Z"
+    }
+  ]
+}
