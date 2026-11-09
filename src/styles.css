@@ -540,3 +540,19 @@ h1 { margin-top: 9px; font-size: 39px; }
   .summary-copy strong small, .palette-summary .summary-copy strong small { font-size: 11px; }
   .search-box { width: 205px; }
 }
+
+/* Backup export / import */
+.backup-actions { display: flex; align-items: center; gap: 4px; }
+.backup-button { height: 36px; min-width: 36px; padding: 0 9px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: #788177; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 11px; transition: background .16s, color .16s, border-color .16s; }
+.backup-button span { display: none; }
+.backup-button:hover:not(:disabled) { border-color: var(--line); background: #fff; color: var(--green); }
+.backup-button:disabled { opacity: .45; cursor: not-allowed; }
+.import-icon { color: var(--green); background: var(--green-light); }
+.import-dialog .import-warning { margin-top: 12px; padding: 9px 11px; border-radius: 6px; color: #8c4d42; background: #f8ece8; font-size: 11px; }
+.import-actions { flex-wrap: wrap; }
+.import-actions button { flex: 1 1 100px; }
+.collection-delete-dialog .confirm-actions .confirm-primary { border-color: var(--green); color: #fff; background: var(--green); }
+.collection-delete-dialog .confirm-actions .confirm-primary:hover { border-color: #1d4337; background: #1d4337; }
+@media (min-width: 600px) {
+  .backup-button span { display: inline; }
+}

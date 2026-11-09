@@ -5,6 +5,7 @@ import {
   Beaker,
   Check,
   ChevronDown,
+  Download,
   Folder,
   FolderPlus,
   ImagePlus,
@@ -18,12 +19,93 @@ import {
   Search,
   Share2,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 
 const STORAGE_KEY = "the-colour-archive-mixes";
 const COLLECTIONS_STORAGE_KEY = "the-colour-archive-collections";
+const RECOVERY_STORAGE_KEY = "the-colour-archive-mixes-recovery";
 const MAX_SHARE_URL_LENGTH = 16000;
+const BACKUP_APP_ID = "the-colour-archive";
+const BACKUP_VERSION = 1;
+const MAX_BACKUP_FILE_SIZE = 50 * 1024 * 1024;
+
+// The recipe fields every mix needs, whether it comes from storage, a share link or a backup.
+function isValidMix(mix) {
+  return Boolean(
+    mix &&
+    typeof mix.name === "string" &&
+    typeof mix.color === "string" &&
+    /^#[\da-f]{6}$/i.test(mix.color) &&
+    typeof mix.notes === "string" &&
+    Array.isArray(mix.paints) &&
+    mix.paints.every((paint) =>
+      paint &&
+      typeof paint.name === "string" &&
+      typeof paint.brand === "string" &&
+      typeof paint.drops === "string" &&
+      typeof paint.swatch === "string",
+    ) &&
+    (mix.image === "" || (typeof mix.image === "string" && /^data:image\/(?:jpeg|png|webp);base64,[\da-z+/=]+$/i.test(mix.image))),
+  );
+}
+
+// A mix saved in an archive also carries its identity and creation date.
+function isStoredMix(mix) {
+  return isValidMix(mix) &&
+    typeof mix.id === "string" &&
+    mix.id !== "" &&
+    typeof mix.createdAt === "string" &&
+    !Number.isNaN(new Date(mix.createdAt).getTime());
+}
+
+function isValidCollection(collection) {
+  return Boolean(
+    collection &&
+    typeof collection.id === "string" &&
+    typeof collection.name === "string" &&
+    Array.isArray(collection.mixIds) &&
+    collection.mixIds.every((id) => typeof id === "string"),
+  );
+}
+
+function uniqueCollectionName(baseName, label, collections) {
+  const taken = (name) => collections.some((collection) => collection.name.toLowerCase() === name.toLowerCase());
+  let name = `${baseName} (${label})`;
+  let suffix = 2;
+  while (taken(name)) {
+    name = `${baseName} (${label} ${suffix})`;
+    suffix += 1;
+  }
+  return name;
+}
+
+function parseBackup(text) {
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error("This file isn’t a Colour Archive backup. It could not be read as JSON.");
+  }
+  if (data?.app !== BACKUP_APP_ID || !Array.isArray(data.mixes) || !Array.isArray(data.collections)) {
+    throw new Error("This file isn’t a Colour Archive backup.");
+  }
+  if (data.version !== BACKUP_VERSION) {
+    throw new Error("This backup was made by a different version of The Colour Archive and can’t be imported.");
+  }
+  const badMixes = data.mixes.filter((mix) => !isStoredMix(mix)).length;
+  if (badMixes) {
+    throw new Error(`This backup has ${badMixes} damaged ${badMixes === 1 ? "mix" : "mixes"}, so nothing was imported.`);
+  }
+  if (!data.collections.every(isValidCollection)) {
+    throw new Error("This backup has damaged collection data, so nothing was imported.");
+  }
+  if (new Set(data.mixes.map((mix) => mix.id)).size !== data.mixes.length) {
+    throw new Error("This backup lists the same mix more than once, so nothing was imported.");
+  }
+  return { mixes: data.mixes, collections: data.collections };
+}
 
 function decodeSharedLink() {
   const token = new URLSearchParams(window.location.hash.slice(1)).get("share");
@@ -34,28 +116,12 @@ function decodeSharedLink() {
     if (payload?.version !== 1 || !["mix", "collection"].includes(payload.kind)) {
       throw new Error("The shared link is not in a supported format.");
     }
-    const validMix = (mix) =>
-      mix &&
-      typeof mix.name === "string" &&
-      typeof mix.color === "string" &&
-      /^#[\da-f]{6}$/i.test(mix.color) &&
-      typeof mix.notes === "string" &&
-      Array.isArray(mix.paints) &&
-      mix.paints.every((paint) =>
-        paint &&
-        typeof paint.name === "string" &&
-        typeof paint.brand === "string" &&
-        typeof paint.drops === "string" &&
-        typeof paint.swatch === "string",
-      ) &&
-      (mix.image === "" || (typeof mix.image === "string" && /^data:image\/(?:jpeg|png|webp);base64,[\da-z+/=]+$/i.test(mix.image)));
-
-    if (payload.kind === "mix" && validMix(payload.mix)) return payload;
+    if (payload.kind === "mix" && isValidMix(payload.mix)) return payload;
     if (
       payload.kind === "collection" &&
       typeof payload.name === "string" &&
       Array.isArray(payload.mixes) &&
-      payload.mixes.every(validMix)
+      payload.mixes.every(isValidMix)
     ) return payload;
     throw new Error("The shared link contains invalid mix data.");
   } catch (error) {
@@ -75,7 +141,21 @@ function readMixes() {
     if (!stored) return { mixes: [], error: "" };
     const parsed = JSON.parse(stored);
     if (!Array.isArray(parsed)) throw new Error("Saved mixes are not in the expected format.");
-    return { mixes: parsed, error: "" };
+    const mixes = parsed.filter(isStoredMix);
+    if (mixes.length === parsed.length) return { mixes, error: "" };
+
+    // Keep the untouched original so the next save can't erase the damaged entries for good.
+    console.error(`Skipped ${parsed.length - mixes.length} damaged saved mix(es).`);
+    try {
+      if (localStorage.getItem(RECOVERY_STORAGE_KEY) === null) localStorage.setItem(RECOVERY_STORAGE_KEY, stored);
+    } catch (recoveryError) {
+      console.error("Could not keep a recovery copy of the saved mixes:", recoveryError);
+    }
+    const skipped = parsed.length - mixes.length;
+    return {
+      mixes,
+      error: `${skipped} saved ${skipped === 1 ? "mix was" : "mixes were"} damaged and could not be shown. The rest of your archive is safe.`,
+    };
   } catch (error) {
     console.error("Could not load saved colour mixes:", error);
     return {
@@ -91,15 +171,7 @@ function readCollections() {
     if (!stored) return { collections: [], error: "" };
     const parsed = JSON.parse(stored);
     if (!Array.isArray(parsed)) throw new Error("Saved collections are not in the expected format.");
-    return {
-      collections: parsed.filter((collection) =>
-        collection &&
-        typeof collection.id === "string" &&
-        typeof collection.name === "string" &&
-        Array.isArray(collection.mixIds),
-      ),
-      error: "",
-    };
+    return { collections: parsed.filter(isValidCollection), error: "" };
   } catch (error) {
     console.error("Could not load saved collections:", error);
     return {
@@ -131,6 +203,10 @@ function App() {
   const [selectedCollectionId, setSelectedCollectionId] = useState(null);
   const [sortNewest, setSortNewest] = useState(true);
   const [notice, setNotice] = useState("");
+  const [backupError, setBackupError] = useState("");
+  const [pendingImport, setPendingImport] = useState(null);
+  const noticeTimer = useRef(null);
+  const backupInput = useRef(null);
   const selectedCollection = collections.find((collection) => collection.id === selectedCollectionId) || null;
 
   useEffect(() => {
@@ -141,13 +217,16 @@ function App() {
     return () => window.removeEventListener("hashchange", updateSharedLink);
   }, []);
 
+  useEffect(() => () => window.clearTimeout(noticeTimer.current), []);
+
   useEffect(() => {
-    if (!showForm && !showCollectionForm && !collectionToDelete) return;
+    if (!showForm && !showCollectionForm && !collectionToDelete && !pendingImport) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     function handleEscape(event) {
       if (event.key !== "Escape") return;
-      if (collectionToDelete) setCollectionToDelete(null);
+      if (pendingImport) setPendingImport(null);
+      else if (collectionToDelete) setCollectionToDelete(null);
       else if (showCollectionForm) setShowCollectionForm(false);
       else closeMixForm();
     }
@@ -156,7 +235,14 @@ function App() {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", handleEscape);
     };
-  }, [showForm, showCollectionForm, collectionToDelete]);
+  }, [showForm, showCollectionForm, collectionToDelete, pendingImport]);
+
+  // One timer for all notices, so a new notice is never cleared by an older notice's timeout.
+  function showNotice(message, duration = 3000) {
+    window.clearTimeout(noticeTimer.current);
+    setNotice(message);
+    if (duration) noticeTimer.current = window.setTimeout(() => setNotice(""), duration);
+  }
 
   const filteredMixes = useMemo(() => {
     const search = query.trim().toLowerCase();
@@ -207,6 +293,127 @@ function App() {
     }
   }
 
+  // Saves mixes and collections together. If either write fails, both are rolled back.
+  function persistArchive(nextMixes, nextCollections, failureMessage) {
+    const previousMixes = localStorage.getItem(STORAGE_KEY);
+    const previousCollections = localStorage.getItem(COLLECTIONS_STORAGE_KEY);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(nextMixes));
+      localStorage.setItem(COLLECTIONS_STORAGE_KEY, JSON.stringify(nextCollections));
+      setMixes(nextMixes);
+      setCollections(nextCollections);
+      setStorageError("");
+      return true;
+    } catch (error) {
+      try {
+        if (previousMixes === null) localStorage.removeItem(STORAGE_KEY);
+        else localStorage.setItem(STORAGE_KEY, previousMixes);
+        if (previousCollections === null) localStorage.removeItem(COLLECTIONS_STORAGE_KEY);
+        else localStorage.setItem(COLLECTIONS_STORAGE_KEY, previousCollections);
+      } catch (rollbackError) {
+        console.error("Could not roll back a failed archive save:", rollbackError);
+      }
+      console.error("Could not save the archive:", error);
+      setStorageError(failureMessage);
+      return false;
+    }
+  }
+
+  function exportBackup() {
+    try {
+      const backup = {
+        app: BACKUP_APP_ID,
+        version: BACKUP_VERSION,
+        exportedAt: new Date().toISOString(),
+        mixes,
+        collections,
+      };
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const now = new Date();
+      const stamp = [now.getFullYear(), now.getMonth() + 1, now.getDate()]
+        .map((part) => String(part).padStart(2, "0"))
+        .join("-");
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `colour-archive-${stamp}.json`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setBackupError("");
+      showNotice(`Backup downloaded with ${mixes.length} ${mixes.length === 1 ? "mix" : "mixes"} and ${collections.length} ${collections.length === 1 ? "collection" : "collections"}.`, 4000);
+    } catch (error) {
+      console.error("Could not export the archive:", error);
+      setBackupError("The backup could not be created. Please try again.");
+    }
+  }
+
+  async function chooseBackupFile(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (file.size > MAX_BACKUP_FILE_SIZE) {
+      setBackupError("This file is too large to be a Colour Archive backup.");
+      return;
+    }
+    try {
+      const backup = parseBackup(await file.text());
+      if (!backup.mixes.length && !backup.collections.length) {
+        throw new Error("This backup is empty. There is nothing to import.");
+      }
+      setBackupError("");
+      setPendingImport(backup);
+    } catch (error) {
+      console.error("Could not read the backup file:", error);
+      setBackupError(error.message || "The backup file could not be read.");
+    }
+  }
+
+  function importBackup(mode) {
+    if (!pendingImport) return;
+    let nextMixes;
+    let nextCollections;
+    let message;
+
+    if (mode === "replace") {
+      nextMixes = pendingImport.mixes;
+      nextCollections = pendingImport.collections.map((collection) => ({
+        ...collection,
+        mixIds: collection.mixIds.filter((id) => nextMixes.some((mix) => mix.id === id)),
+      }));
+      message = `Archive replaced with ${nextMixes.length} ${nextMixes.length === 1 ? "mix" : "mixes"} and ${nextCollections.length} ${nextCollections.length === 1 ? "collection" : "collections"} from the backup.`;
+    } else {
+      const existingMixIds = new Set(mixes.map((mix) => mix.id));
+      const newMixes = pendingImport.mixes.filter((mix) => !existingMixIds.has(mix.id));
+      nextMixes = [...newMixes, ...mixes];
+      const existingCollectionIds = new Set(collections.map((collection) => collection.id));
+      nextCollections = [...collections];
+      for (const collection of pendingImport.collections) {
+        if (existingCollectionIds.has(collection.id)) continue;
+        const nameTaken = nextCollections.some((saved) => saved.name.toLowerCase() === collection.name.toLowerCase());
+        nextCollections.push({
+          ...collection,
+          name: nameTaken ? uniqueCollectionName(collection.name, "imported", nextCollections) : collection.name,
+          mixIds: collection.mixIds.filter((id) => nextMixes.some((mix) => mix.id === id)),
+        });
+      }
+      const addedCollections = nextCollections.length - collections.length;
+      const skipped = pendingImport.mixes.length - newMixes.length;
+      message = `Imported ${newMixes.length} ${newMixes.length === 1 ? "mix" : "mixes"} and ${addedCollections} ${addedCollections === 1 ? "collection" : "collections"}.`;
+      if (skipped) message += ` ${skipped} ${skipped === 1 ? "mix was" : "mixes were"} already in your archive.`;
+    }
+
+    if (persistArchive(nextMixes, nextCollections, "The backup could not be imported. Your browser storage may be full, so your archive was left unchanged.")) {
+      if (selectedCollectionId && !nextCollections.some((collection) => collection.id === selectedCollectionId)) {
+        setSelectedCollectionId(null);
+      }
+      setQuery("");
+      setPendingImport(null);
+      showNotice(message, 5000);
+    }
+  }
+
   function saveCollection(values) {
     const collectionId = values.id || crypto.randomUUID();
     const nextCollections = values.id
@@ -224,8 +431,7 @@ function App() {
       setCollectionsExpanded(!window.matchMedia("(max-width: 899px)").matches);
       setShowCollectionForm(false);
       setQuery("");
-      setNotice(values.id ? "Collection updated." : "Collection created.");
-      window.setTimeout(() => setNotice(""), 3000);
+      showNotice(values.id ? "Collection updated." : "Collection created.");
     }
   }
 
@@ -238,8 +444,7 @@ function App() {
         setQuery("");
       }
       setCollectionToDelete(null);
-      setNotice(`“${collectionToDelete.name}” was deleted. Its mixes are still in your archive.`);
-      window.setTimeout(() => setNotice(""), 3000);
+      showNotice(`“${collectionToDelete.name}” was deleted. Its mixes are still in your archive.`);
     }
   }
 
@@ -253,9 +458,8 @@ function App() {
       }, ...mixes];
     if (persist(nextMixes)) {
       setShowForm(false);
-      setNotice(mixToEdit ? "Mix updated." : "Mix saved to your archive.");
+      showNotice(mixToEdit ? "Mix updated." : "Mix saved to your archive.");
       setMixToEdit(null);
-      window.setTimeout(() => setNotice(""), 3000);
     }
   }
 
@@ -289,8 +493,7 @@ function App() {
 
       setShareError("");
       const onSuccess = (copied) => {
-        setNotice(`${photosOmitted ? "Link shared; photos were omitted to keep it short." : "Share link ready."}${copied ? " Copied to clipboard." : ""}`);
-        window.setTimeout(() => setNotice(""), 4000);
+        showNotice(`${photosOmitted ? "Link shared; photos were omitted to keep it short." : "Share link ready."}${copied ? " Copied to clipboard." : ""}`, 4000);
       };
       const onError = (error) => {
         if (error.name === "AbortError") return;
@@ -335,57 +538,30 @@ function App() {
       if (!persist(nextMixes)) return false;
     } else {
       const baseName = sharedLink.name.trim() || "Shared collection";
-      let collectionName = `${baseName} (shared)`;
-      let suffix = 2;
-      while (collections.some((collection) => collection.name.toLowerCase() === collectionName.toLowerCase())) {
-        collectionName = `${baseName} (shared ${suffix})`;
-        suffix += 1;
-      }
       const nextCollections = [...collections, {
         id: crypto.randomUUID(),
-        name: collectionName,
+        name: uniqueCollectionName(baseName, "shared", collections),
         mixIds: importedMixes.map((mix) => mix.id),
         createdAt: new Date().toISOString(),
       }];
-      const previousMixes = localStorage.getItem(STORAGE_KEY);
-      const previousCollections = localStorage.getItem(COLLECTIONS_STORAGE_KEY);
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(nextMixes));
-        localStorage.setItem(COLLECTIONS_STORAGE_KEY, JSON.stringify(nextCollections));
-        setMixes(nextMixes);
-        setCollections(nextCollections);
-        setStorageError("");
-      } catch (error) {
-        try {
-          if (previousMixes === null) localStorage.removeItem(STORAGE_KEY);
-          else localStorage.setItem(STORAGE_KEY, previousMixes);
-          if (previousCollections === null) localStorage.removeItem(COLLECTIONS_STORAGE_KEY);
-          else localStorage.setItem(COLLECTIONS_STORAGE_KEY, previousCollections);
-        } catch (rollbackError) {
-          console.error("Could not roll back a failed shared collection import:", rollbackError);
-        }
-        console.error("Could not save the shared collection:", error);
-        setStorageError("This collection could not be saved. Your browser storage may be full.");
+      if (!persistArchive(nextMixes, nextCollections, "This collection could not be saved. Your browser storage may be full.")) {
         return false;
       }
     }
 
-    setNotice(sharedLink.kind === "mix" ? "Mix saved to your archive." : "Collection saved to your archive.");
+    // The shared page stays open after saving, so this notice is kept on screen.
+    showNotice(sharedLink.kind === "mix" ? "Mix saved to your archive." : "Collection saved to your archive.", 0);
     return true;
   }
 
   function deleteMix(id) {
     const nextMixes = mixes.filter((mix) => mix.id !== id);
-    if (persist(nextMixes)) {
-      const nextCollections = collections.map((collection) => ({
-        ...collection,
-        mixIds: collection.mixIds.filter((mixId) => mixId !== id),
-      }));
-      if (nextCollections.some((collection, index) => collection.mixIds.length !== collections[index].mixIds.length)) {
-        persistCollections(nextCollections);
-      }
-      setNotice("Mix removed from your archive.");
-      window.setTimeout(() => setNotice(""), 3000);
+    const nextCollections = collections.map((collection) => ({
+      ...collection,
+      mixIds: collection.mixIds.filter((mixId) => mixId !== id),
+    }));
+    if (persistArchive(nextMixes, nextCollections, "This mix could not be removed. Your browser storage may be full.")) {
+      showNotice("Mix removed from your archive.");
     }
   }
 
@@ -478,6 +654,33 @@ function App() {
             <strong>{pageTitle}</strong>
           </div>
           <div className="topbar-right">
+            <div className="backup-actions" role="group" aria-label="Backup">
+              <button
+                className="backup-button"
+                onClick={exportBackup}
+                disabled={!mixes.length && !collections.length}
+                aria-label="Export backup"
+                title="Download a backup file of your archive"
+              >
+                <Download size={15} /><span>Export</span>
+              </button>
+              <button
+                className="backup-button"
+                onClick={() => backupInput.current?.click()}
+                aria-label="Import backup"
+                title="Load mixes from a backup file"
+              >
+                <Upload size={15} /><span>Import</span>
+              </button>
+              <input
+                ref={backupInput}
+                type="file"
+                accept="application/json,.json"
+                hidden
+                onChange={chooseBackupFile}
+              />
+            </div>
+            <span className="topbar-divider" />
             <span className="saved-status"><span className="status-dot" /> Saved in this browser</span>
             <span className="topbar-divider" />
             <span className="date-label">YOUR PAINT DESK</span>
@@ -549,6 +752,7 @@ function App() {
 
             {storageError && <div className="error-banner" role="alert">{storageError}</div>}
             {shareError && <div className="error-banner" role="alert">{shareError}</div>}
+            {backupError && <div className="error-banner" role="alert">{backupError}</div>}
             {notice && <div className="success-banner" role="status"><Check size={16} />{notice}</div>}
 
             {filteredMixes.length > 0 ? (
@@ -618,6 +822,25 @@ function App() {
             <div className="confirm-actions">
               <button autoFocus onClick={() => setCollectionToDelete(null)}>Cancel</button>
               <button className="confirm-delete" onClick={deleteCollection}>Delete collection</button>
+            </div>
+          </section>
+        </div>
+      )}
+      {pendingImport && (
+        <div className="modal-backdrop collection-delete-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPendingImport(null); }}>
+          <section className="collection-delete-dialog import-dialog" role="dialog" aria-modal="true" aria-labelledby="import-title" aria-describedby="import-description">
+            <span className="confirm-icon import-icon"><Upload size={18} /></span>
+            <h2 id="import-title">Import this backup?</h2>
+            <p id="import-description">
+              It contains <strong>{pendingImport.mixes.length} {pendingImport.mixes.length === 1 ? "mix" : "mixes"}</strong> and <strong>{pendingImport.collections.length} {pendingImport.collections.length === 1 ? "collection" : "collections"}</strong>.
+              {" "}Add them to your archive, or replace everything in this browser with the backup.
+            </p>
+            {mixes.length > 0 && <p className="import-warning">Replacing deletes your current {mixes.length} {mixes.length === 1 ? "mix" : "mixes"}. Export a backup first if you might want them later.</p>}
+            {storageError && <div className="form-error" role="alert">{storageError}</div>}
+            <div className="confirm-actions import-actions">
+              <button onClick={() => setPendingImport(null)}>Cancel</button>
+              <button className="confirm-delete" onClick={() => importBackup("replace")}>Replace archive</button>
+              <button autoFocus className="confirm-primary" onClick={() => importBackup("merge")}>Add to archive</button>
             </div>
           </section>
         </div>
