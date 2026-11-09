@@ -585,10 +585,10 @@ function App() {
   return (
     <div className={`app-shell min-h-screen ${desktopSidebarOpen ? "" : "desktop-sidebar-collapsed"}`}>
       <aside className={`sidebar ${collectionsExpanded ? "collections-open" : ""}`}>
-        <a className="brand" href="#" aria-label="The Colour Archive home">
-          <span className="brand-mark"><Layers3 size={21} strokeWidth={2.2} /></span>
+        <button className="brand" type="button" onClick={selectArchive} aria-label="The Colour Archive: go to My archive" title="Go to My archive">
+          <span className="brand-mark" aria-hidden="true"><Layers3 size={21} strokeWidth={2.2} /></span>
           <span className="brand-name">the colour<br />archive</span>
-        </a>
+        </button>
 
         <div className="collections-section">
           <div className="collections-desktop-label">COLLECTIONS</div>
@@ -925,7 +925,6 @@ function SharedMixCard({ mix }) {
         <div className="paint-list">
           {mix.paints.map((paint, index) => (
             <div className="paint-line" key={`${paint.name}-${index}`}>
-              <span className="paint-dot" style={{ backgroundColor: paint.swatch }} />
               <span className="paint-name">{paint.name || "Untitled paint"}</span>
               <span className="paint-brand">{paint.brand}</span>
               <strong>{paint.drops} <small>{Number(paint.drops) === 1 ? "drop" : "drops"}</small></strong>
@@ -977,7 +976,6 @@ function MixCard({ mix, onDelete, onEdit, onShare }) {
         <div className="paint-list">
           {mix.paints.map((paint, index) => (
             <div className="paint-line" key={`${paint.name}-${index}`}>
-              <span className="paint-dot" style={{ backgroundColor: paint.swatch }} />
               <span className="paint-name">{paint.name || "Untitled paint"}</span>
               <span className="paint-brand">{paint.brand}</span>
               <strong>{paint.drops} <small>{Number(paint.drops) === 1 ? "drop" : "drops"}</small></strong>
@@ -1382,7 +1380,7 @@ function MixForm({ mix, onClose, onSave }) {
         </div>
         <form onSubmit={submit}>
           <div className="form-scroll-area">
-            <label className="field-label">What are you calling it?<span className="required-mark">*</span>
+            <label className="field-label"><span className="field-label-text">What are you calling it?<span className="required-mark" aria-hidden="true">*</span></span>
               <input className="text-input" value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Stormy midnight blue" autoFocus maxLength={70} />
             </label>
 
@@ -1400,7 +1398,7 @@ function MixForm({ mix, onClose, onSave }) {
                 <div className="ingredient-row" key={index}>
                   <span className="ingredient-index">{String(index + 1).padStart(2, "0")}</span>
                   <label className="ingredient-input paint-field"><span className="sr-only">Paint name</span><input value={paint.name} onChange={(event) => updatePaint(index, "name", event.target.value)} placeholder="Paint name" maxLength={50} /></label>
-                  <label className="ingredient-input brand-field"><span className="sr-only">Paint brand</span><select value={paint.brand} onChange={(event) => updatePaint(index, "brand", event.target.value)}><option>The Army Painter</option><option>Citadel</option><option>Vallejo</option><option>AK Interactive</option><option>Other</option></select></label>
+                  <label className="ingredient-input brand-field"><span className="sr-only">Paint brand</span><select value={paint.brand} onChange={(event) => updatePaint(index, "brand", event.target.value)}><option>The Army Painter</option><option>Citadel</option><option>Vallejo</option><option>AK Interactive</option><option>Other</option></select><ChevronDown size={15} className="select-chevron" aria-hidden="true" /></label>
                   <label className="ingredient-input drops-field"><span className="sr-only">Number of drops</span><input type="number" min="1" step="1" value={paint.drops} onChange={(event) => updatePaint(index, "drops", event.target.value)} /><small>drops</small></label>
                 </div>
               ))}
@@ -1408,10 +1406,10 @@ function MixForm({ mix, onClose, onSave }) {
             <button className="add-paint-button" type="button" onClick={addPaint}><Plus size={15} /> Add another paint</button>
 
             <div className="form-lower-grid">
-              <label className="field-label">A note for later <span className="optional-label">OPTIONAL</span>
+              <label className="field-label"><span className="field-label-text">A note for later <span className="optional-label">OPTIONAL</span></span>
                 <textarea className="text-input notes-input" value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="What did you use it for? Any tips for next time?" maxLength={240} />
               </label>
-              <div className="field-label">A photo of your mix <span className="optional-label">OPTIONAL</span>
+              <div className="field-label"><span className="field-label-text">A photo of your mix <span className="optional-label">OPTIONAL</span></span>
                 {!image && (
                   <button className="upload-zone" type="button" onClick={() => fileInput.current?.click()}>
                     <span className="upload-icon"><ImagePlus size={18} /></span><span className="upload-copy"><strong>{imageName || "Add a photo"}</strong><small>JPG, PNG or WebP · up to 8 MB, resized</small></span><Plus size={17} className="upload-plus" />
