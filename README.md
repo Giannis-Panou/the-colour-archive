@@ -12,6 +12,7 @@ It works straight away in the browser with no account. Sign in to sync your arch
 - **Photo colour sampling:** attach a photo of a painted model and click or drag on it to pick the swatch colour. A magnifier helps you aim, and you can also move the picker with the arrow keys and press Enter. Photos are scaled down to 1200 px and compressed to JPEG before they are saved.
 - **Collections:** group mixes into named collections (e.g. "Woodland bases"). Deleting a collection leaves its mixes in the archive.
 - **Search and sort:** search across mix names, notes, paint names and brands. Sort by newest or by name.
+- **Real addresses:** every collection has its own address (`/collections/:id`), as does the profile (`/profile`). You can bookmark them, and the browser's Back and Forward buttons work.
 
 ### Accounts and sync (optional)
 
@@ -44,6 +45,10 @@ Whoever opens a link can save the recipe to their own archive. Shared photos are
 - The "Workbench" look: a cutting-mat green sidebar, primer-grey surfaces and a paint-pot-cap yellow accent, with Barlow Condensed, Barlow and Space Mono.
 - Colours are defined as CSS custom properties in one block at the top of `src/styles/styles.css`.
 - Text meets WCAG AA contrast, controls have visible focus states, and hover and enter animations respect `prefers-reduced-motion`.
+- **Dialogs work from the keyboard:**
+  - focus moves into a dialog when it opens, and Tab stays inside it;
+  - Escape closes only the top dialog;
+  - focus returns to the button that opened the dialog.
 - Responsive from phone to desktop: a bottom collections bar on phones, a compact sidebar on tablets and a full, collapsible sidebar on desktops.
 
 ## Tech stack
@@ -96,13 +101,17 @@ npm run test:e2e    # Playwright browser tests
 npm run test:live   # Playwright tests against the real Supabase project
 ```
 
-- **Browser tests** (`e2e/`) start the dev server themselves:
-  - `archive.spec.ts` walks through the whole app signed out.
-  - `account.spec.ts` covers sign-in and the profile page against a mocked account.
-  - `security.spec.ts` builds the app, serves it with the headers from `netlify.toml`, and checks that the security policy holds and that hostile share links and backups do nothing.
-- **Live tests** (`e2e/live/`) use throwaway anonymous accounts on your Supabase project and delete everything they create:
-  - `cloud.spec.ts` covers sync, photos, short links, imports and the profile.
-  - `database-security.spec.ts` attacks the database as a visitor and as another user, including SQL injection.
+| Suite | Tests | What it covers |
+|---|---|---|
+| Unit (`src/**/*.test.ts`) | 42 | Recipe validation, backup parsing, compressed links (including a "zip bomb" link), both stores, rollback when browser storage is full |
+| `e2e/archive.spec.ts` | 32 | The whole app signed out: mixes, photo sampling by mouse and keyboard, collections, search, sort, sharing, backups, addresses, phone layout |
+| `e2e/account.spec.ts` | 12 | Sign-in dialog, profile page and sign-out against a mocked account; keyboard focus in dialogs |
+| `e2e/security.spec.ts` | 13 | The production build under the `netlify.toml` headers: script injection, prototype pollution, frame blocking, no policy violations |
+| `e2e/live/cloud.spec.ts` | 10 | Against Supabase: sync, stored photos, short links with photos, imports, export, profile |
+| `e2e/live/database-security.spec.ts` | 6 | Against Supabase: row-level security between two users, private photos, SQL injection |
+
+- **Browser tests** (`e2e/`) start the dev server themselves. The security suite also builds the app and serves the production build.
+- **Live tests** (`e2e/live/`) use throwaway anonymous accounts on your Supabase project and delete everything they create.
 
   Switch on **Authentication → Sign In / Providers → Allow anonymous sign-ins** while they run, and switch it off afterwards.
 - **Browser:** the tests use your installed Google Chrome. To use Playwright's own Chromium instead, run `npx playwright install chromium` and set `PLAYWRIGHT_BUNDLED_BROWSER=1`.
@@ -175,9 +184,20 @@ npm run test:live   # Playwright tests against the real Supabase project
   - `nosniff`, a strict referrer policy and a restrictive permissions policy.
 - **Incoming data is checked:** share links and backup files are validated before use. Photos must be JPEG, PNG or WebP data, or a link into the share bucket. Compressed links are size-capped while they're unpacked.
 - **The database checks its own data:** colours, name lengths and share codes are checked again by the database, and share snapshots are limited to 100 KB.
+- **No SQL is built from text.** Every query goes through Supabase's query builder, which sends values as parameters. The one database function, `get_share`, compares the code as a plain value. Ids are checked to be UUIDs before they're used in list filters.
+- **How it's tested:** these protections are checked by the security and live test suites above.
+  - Visitors and signed-in users try to read, change, take over or link to someone else's rows and photos.
+  - SQL injection is tried through the share lookup, filters, sorting, column lists and saved text, including time-delay payloads.
+  - Hostile share links and backups are opened under the real security headers.
+- **Dependency audit:** `npm audit --omit=dev` reports no vulnerabilities in what the site ships. A moderate advisory in `minimatch` comes only from the linter (typescript-eslint). It runs on developers' machines, never in the built site or in Netlify's build.
 
 ## Deployment
 
-Netlify builds the site from `netlify.toml`: it runs `npm run build`, publishes `dist/`, and rewrites every route (including `/s/…` short links) to `index.html`. Connect the repository in Netlify and it deploys on every push to `main`.
+Netlify builds the site from `netlify.toml`. Connect the repository in Netlify and it deploys on every push to `main`. On each build it:
+- runs `npm run build`, which type-checks first, so a type error stops the deploy instead of shipping;
+- publishes `dist/`;
+- sends every address (`/collections/…`, `/profile`, `/s/…` short links) to `index.html`, where React Router takes over.
+
+The build needs the dev dependencies (TypeScript), which Netlify installs by default. Don't set `NODE_ENV=production` in Netlify's environment variables, because npm then skips them.
 
 To turn on accounts in production, add `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` under **Site configuration → Environment variables** and redeploy. If they're missing, the deployed app runs in browser-only mode.
