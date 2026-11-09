@@ -192,6 +192,7 @@ function App() {
   const [mixToEdit, setMixToEdit] = useState(null);
   const [sharedLink, setSharedLink] = useState(decodeSharedLink);
   const [shareError, setShareError] = useState("");
+  // false when closed, "new" to create a collection, "edit" to manage the selected one.
   const [showCollectionForm, setShowCollectionForm] = useState(false);
   const [collectionToDelete, setCollectionToDelete] = useState(null);
   const [collectionsExpanded, setCollectionsExpanded] = useState(
@@ -625,7 +626,7 @@ function App() {
                 </button>
               </div>
             ))}
-            <button className="add-collection-nav" onClick={() => setShowCollectionForm(true)}>
+            <button className="add-collection-nav" onClick={() => setShowCollectionForm("new")}>
               <FolderPlus size={16} />
               <span>Add collection</span>
             </button>
@@ -731,7 +732,7 @@ function App() {
                   }, selectedCollection.name)}>
                     <Share2 size={15} /> Share collection
                   </button>
-                  <button className="sort-button" onClick={() => setShowCollectionForm(true)}>
+                  <button className="sort-button" onClick={() => setShowCollectionForm("edit")}>
                     <Plus size={15} /> Manage mixes
                   </button>
                   {filteredMixes.length > 0 && <button className="sort-button" onClick={() => setSortNewest((value) => !value)}><ArrowDownUp size={15} /> {sortNewest ? "Newest first" : "Name A–Z"}</button>}
@@ -772,7 +773,7 @@ function App() {
                 <Folder size={23} />
                 <h3>This collection is ready for its first mix</h3>
                 <p>Add mixes from your archive. They’ll stay in your archive too.</p>
-                <button className="primary-button" onClick={() => setShowCollectionForm(true)}><Plus size={16} /> Add mixes</button>
+                <button className="primary-button" onClick={() => setShowCollectionForm("edit")}><Plus size={16} /> Add mixes</button>
               </div>
             ) : selectedCollection || mixes.length > 0 ? (
               <div className="empty-search">
@@ -807,7 +808,7 @@ function App() {
         <CollectionForm
           mixes={mixes}
           collections={collections}
-          collection={selectedCollection}
+          collection={showCollectionForm === "edit" ? selectedCollection : null}
           onClose={() => setShowCollectionForm(false)}
           onSave={saveCollection}
         />
