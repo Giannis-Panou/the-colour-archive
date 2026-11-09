@@ -729,3 +729,53 @@ button:active:not(:disabled) { transform: translateY(0) scale(.97); transition-d
 @media (min-width: 900px) {
   .collections-open .side-nav { animation: none; }
 }
+
+/* ---------- Account: sign in, sync status, loading ---------- */
+.account-button {
+  height: 34px; padding: 0 10px 0 4px; border: 1px solid var(--line); border-radius: 18px; background: var(--card);
+  color: var(--ink-2); display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600;
+}
+.account-button.sign-in { padding: 0 12px; border-color: var(--green); color: var(--green); }
+.account-button:hover { border-color: var(--line-strong); color: var(--ink); transform: translateY(-1px); box-shadow: var(--lift-shadow); }
+.account-button.sign-in:hover { background: var(--green); border-color: var(--green); color: #fff; }
+.account-button.sign-in:hover svg { transform: translateX(2px); }
+.account-button:not(.sign-in) svg { display: none; }
+.account-button:not(.sign-in):hover .account-initial { background: var(--danger); }
+.account-button:not(.sign-in):hover svg { display: block; }
+.account-initial {
+  width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex: none;
+  background: var(--green); color: #fff; font: 600 12px var(--body); transition: background-color var(--t-fast) var(--ease);
+}
+.account-label { display: none; }
+.saved-status.synced .status-dot { background: var(--green); box-shadow: 0 0 0 3px var(--green-light); }
+.saved-status.syncing .status-dot { background: var(--accent-bright); animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin .9s linear infinite; }
+.primary-button:disabled, .confirm-actions button:disabled, .cancel-button:disabled { opacity: .6; cursor: progress; transform: none; box-shadow: none; }
+.archive-loading {
+  min-height: 220px; border: 1px dashed var(--line); border-radius: 4px; display: flex; align-items: center; justify-content: center;
+  gap: 10px; color: var(--muted); background: color-mix(in srgb, var(--card) 60%, transparent);
+}
+.archive-loading svg { color: var(--green); }
+
+.sign-in-dialog { position: relative; text-align: left; }
+.sign-in-dialog .confirm-icon { margin: 0; }
+.sign-in-dialog h2 { margin-top: 14px; }
+.sign-in-close { position: absolute; top: 14px; right: 14px; width: 32px; height: 32px; }
+.sign-in-form { display: grid; gap: 0; }
+.sign-in-field { margin-top: 18px; }
+.sign-in-dialog .form-error { margin-top: 12px; }
+.sign-in-hint { margin-top: 10px !important; font-size: 12px !important; }
+.sign-in-dialog .confirm-actions { margin-top: 20px; }
+
+@media (min-width: 600px) {
+  .account-label { display: inline; }
+}
+@media (max-width: 599px) {
+  .account-button.sign-in { width: 34px; padding: 0; justify-content: center; }
+  .account-button:not(.sign-in) { padding: 0 3px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spin, .saved-status.syncing .status-dot { animation: none; }
+}

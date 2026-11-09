@@ -10,6 +10,10 @@ import {
   FolderPlus,
   ImagePlus,
   Layers3,
+  LoaderCircle,
+  LogIn,
+  LogOut,
+  Mail,
   Image as ImageIcon,
   PanelLeftClose,
   PanelLeftOpen,
@@ -22,6 +26,8 @@ import {
   Upload,
   X,
 } from "lucide-react";
+import { hasStoredSession, supabase } from "./supabase.js";
+import * as cloud from "./cloud.js";
 
 const STORAGE_KEY = "the-colour-archive-mixes";
 const COLLECTIONS_STORAGE_KEY = "the-colour-archive-collections";
@@ -30,6 +36,7 @@ const MAX_SHARE_URL_LENGTH = 16000;
 const BACKUP_APP_ID = "the-colour-archive";
 const BACKUP_VERSION = 1;
 const MAX_BACKUP_FILE_SIZE = 50 * 1024 * 1024;
+const MIGRATION_DISMISSED_KEY = "the-colour-archive-move-dismissed";
 
 // The recipe fields every mix needs, whether it comes from storage, a share link or a backup.
 function isValidMix(mix) {
@@ -182,11 +189,23 @@ function readCollections() {
 }
 
 function App() {
-  const initialData = useMemo(() => readMixes(), []);
-  const initialCollections = useMemo(() => readCollections(), []);
+  // With a saved sign-in, wait for the account's archive instead of flashing this browser's one.
+  const startsSignedIn = useMemo(() => hasStoredSession(), []);
+  const initialData = useMemo(() => (startsSignedIn ? { mixes: [], error: "" } : readMixes()), [startsSignedIn]);
+  const initialCollections = useMemo(() => (startsSignedIn ? { collections: [], error: "" } : readCollections()), [startsSignedIn]);
   const [mixes, setMixes] = useState(initialData.mixes);
   const [collections, setCollections] = useState(initialCollections.collections);
   const [storageError, setStorageError] = useState(initialData.error || initialCollections.error);
+  const [session, setSession] = useState(null);
+  const [authReady, setAuthReady] = useState(!supabase);
+  const [cloudStatus, setCloudStatus] = useState(startsSignedIn ? "loading" : "idle");
+  const [cloudReload, setCloudReload] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [showSignIn, setShowSignIn] = useState(false);
+  const [moveOffer, setMoveOffer] = useState(null);
+  const user = session?.user || null;
+  const userId = user?.id || null;
+  const archiveLoading = (startsSignedIn && !authReady) || cloudStatus === "loading";
   const [query, setQuery] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [mixToEdit, setMixToEdit] = useState(null);
@@ -220,13 +239,88 @@ function App() {
 
   useEffect(() => () => window.clearTimeout(noticeTimer.current), []);
 
+  // Follow the Supabase sign-in state, including returning from a magic link (?code=...).
   useEffect(() => {
-    if (!showForm && !showCollectionForm && !collectionToDelete && !pendingImport) return;
+    if (!supabase) return undefined;
+    const params = new URLSearchParams(window.location.search);
+    const linkError = params.get("error_description") || new URLSearchParams(window.location.hash.slice(1)).get("error_description");
+    if (linkError) {
+      setStorageError(/expired|invalid/i.test(linkError)
+        ? "That sign-in link has expired or was already used. Request a new one."
+        : `Signing in didn't work: ${linkError}`);
+    }
+    function cleanAddress() {
+      const url = new URL(window.location.href);
+      let changed = false;
+      for (const name of ["code", "error", "error_code", "error_description"]) {
+        if (url.searchParams.has(name)) { url.searchParams.delete(name); changed = true; }
+      }
+      if (changed) window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    }
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setAuthReady(true);
+      cleanAddress();
+    });
+    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      cleanAddress();
+    });
+    return () => data.subscription.unsubscribe();
+  }, []);
+
+  // Load the account's archive after signing in, and this browser's archive after signing out.
+  useEffect(() => {
+    if (!authReady) return undefined;
+    if (!userId) {
+      if (cloudStatus === "idle") return undefined;
+      const local = readMixes();
+      const localCollections = readCollections();
+      setMixes(local.mixes);
+      setCollections(localCollections.collections);
+      setStorageError(local.error || localCollections.error);
+      setSelectedCollectionId(null);
+      setMoveOffer(null);
+      setCloudStatus("idle");
+      return undefined;
+    }
+    let cancelled = false;
+    setCloudStatus("loading");
+    setMixes([]);
+    setCollections([]);
+    setSelectedCollectionId(null);
+    setQuery("");
+    cloud.loadArchive().then((archive) => {
+      if (cancelled) return;
+      setMixes(archive.mixes);
+      setCollections(archive.collections);
+      setCloudStatus("ready");
+      setStorageError("");
+      const local = readMixes();
+      const localCollections = readCollections();
+      let dismissed = false;
+      try { dismissed = localStorage.getItem(MIGRATION_DISMISSED_KEY) === userId; } catch { /* ignore */ }
+      if ((local.mixes.length || localCollections.collections.length) && !dismissed) {
+        setMoveOffer({ mixes: local.mixes, collections: localCollections.collections });
+      }
+    }).catch((error) => {
+      if (cancelled) return;
+      console.error("Could not load the archive from the account:", error);
+      setCloudStatus("error");
+      setStorageError(cloud.friendlyCloudError(error, "Your archive couldn't be loaded from your account. Try again in a moment."));
+    });
+    return () => { cancelled = true; };
+  }, [authReady, userId, cloudReload]);
+
+  useEffect(() => {
+    if (!showForm && !showCollectionForm && !collectionToDelete && !pendingImport && !showSignIn && !moveOffer) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     function handleEscape(event) {
       if (event.key !== "Escape") return;
-      if (pendingImport) setPendingImport(null);
+      if (showSignIn) setShowSignIn(false);
+      else if (moveOffer) setMoveOffer(null);
+      else if (pendingImport) setPendingImport(null);
       else if (collectionToDelete) setCollectionToDelete(null);
       else if (showCollectionForm) setShowCollectionForm(false);
       else closeMixForm();
@@ -236,13 +330,63 @@ function App() {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", handleEscape);
     };
-  }, [showForm, showCollectionForm, collectionToDelete, pendingImport]);
+  }, [showForm, showCollectionForm, collectionToDelete, pendingImport, showSignIn, moveOffer]);
 
   // One timer for all notices, so a new notice is never cleared by an older notice's timeout.
   function showNotice(message, duration = 3000) {
     window.clearTimeout(noticeTimer.current);
     setNotice(message);
     if (duration) noticeTimer.current = window.setTimeout(() => setNotice(""), duration);
+  }
+
+  // Runs one change against the account. Returns its result, or null after showing the error.
+  async function runCloud(task, failureMessage) {
+    setBusy(true);
+    try {
+      const result = await task();
+      setStorageError("");
+      return result ?? true;
+    } catch (error) {
+      console.error(failureMessage, error);
+      setStorageError(cloud.friendlyCloudError(error, failureMessage));
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function signOut() {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.error("Could not sign out:", error);
+      setStorageError("You couldn't be signed out. Check your connection and try again.");
+      return;
+    }
+    showNotice("Signed out. You're now seeing the archive saved in this browser.", 4000);
+  }
+
+  async function moveLocalArchive() {
+    if (!moveOffer || !userId) return;
+    const result = await runCloud(
+      () => cloud.importArchive(userId, moveOffer, { label: "from this browser" }),
+      "Your mixes couldn't be moved to your account. Nothing was removed from this browser.",
+    );
+    if (!result) return;
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(COLLECTIONS_STORAGE_KEY);
+    } catch (error) {
+      console.error("Could not clear the browser archive after moving it:", error);
+    }
+    setMixes(result.archive.mixes);
+    setCollections(result.archive.collections);
+    setMoveOffer(null);
+    showNotice(`Moved ${result.addedMixes} ${result.addedMixes === 1 ? "mix" : "mixes"} and ${result.addedCollections} ${result.addedCollections === 1 ? "collection" : "collections"} to your account.`, 5000);
+  }
+
+  function keepLocalArchive() {
+    try { localStorage.setItem(MIGRATION_DISMISSED_KEY, userId); } catch { /* ignore */ }
+    setMoveOffer(null);
   }
 
   const filteredMixes = useMemo(() => {
@@ -320,13 +464,23 @@ function App() {
     }
   }
 
-  function exportBackup() {
+  async function exportBackup() {
     try {
+      // Account photos are links, so backups embed a copy of each photo instead.
+      let backupMixes = mixes;
+      if (user) {
+        setBusy(true);
+        backupMixes = await Promise.all(mixes.map(async ({ imagePath, ...mix }) => ({
+          ...mix,
+          image: mix.image && !mix.image.startsWith("data:") ? await cloud.photoAsDataUrl(mix.image) : mix.image,
+        })));
+        setBusy(false);
+      }
       const backup = {
         app: BACKUP_APP_ID,
         version: BACKUP_VERSION,
         exportedAt: new Date().toISOString(),
-        mixes,
+        mixes: backupMixes,
         collections,
       };
       const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
@@ -345,6 +499,7 @@ function App() {
       setBackupError("");
       showNotice(`Backup downloaded with ${mixes.length} ${mixes.length === 1 ? "mix" : "mixes"} and ${collections.length} ${collections.length === 1 ? "collection" : "collections"}.`, 4000);
     } catch (error) {
+      setBusy(false);
       console.error("Could not export the archive:", error);
       setBackupError("The backup could not be created. Please try again.");
     }
@@ -371,8 +526,28 @@ function App() {
     }
   }
 
-  function importBackup(mode) {
+  async function importBackup(mode) {
     if (!pendingImport) return;
+    if (user) {
+      const result = await runCloud(
+        () => cloud.importArchive(userId, pendingImport, { mode }),
+        "The backup couldn't be imported to your account. Try again in a moment.",
+      );
+      if (!result) return;
+      setMixes(result.archive.mixes);
+      setCollections(result.archive.collections);
+      if (selectedCollectionId && !result.archive.collections.some((collection) => collection.id === selectedCollectionId)) {
+        setSelectedCollectionId(null);
+      }
+      setQuery("");
+      setPendingImport(null);
+      let message = mode === "replace"
+        ? `Archive replaced with ${result.addedMixes} ${result.addedMixes === 1 ? "mix" : "mixes"} and ${result.addedCollections} ${result.addedCollections === 1 ? "collection" : "collections"} from the backup.`
+        : `Imported ${result.addedMixes} ${result.addedMixes === 1 ? "mix" : "mixes"} and ${result.addedCollections} ${result.addedCollections === 1 ? "collection" : "collections"}.`;
+      if (result.skippedMixes) message += ` ${result.skippedMixes} ${result.skippedMixes === 1 ? "mix was" : "mixes were"} already in your archive.`;
+      showNotice(message, 5000);
+      return;
+    }
     let nextMixes;
     let nextCollections;
     let message;
@@ -415,7 +590,24 @@ function App() {
     }
   }
 
-  function saveCollection(values) {
+  async function saveCollection(values) {
+    if (user) {
+      const existing = values.id ? collections.find((collection) => collection.id === values.id) : null;
+      const saved = await runCloud(
+        () => cloud.saveCollection(values, existing),
+        "This collection couldn't be saved to your account. Try again in a moment.",
+      );
+      if (!saved) return;
+      setCollections((current) => existing
+        ? current.map((collection) => (collection.id === saved.id ? saved : collection))
+        : [...current, saved]);
+      setSelectedCollectionId(saved.id);
+      setCollectionsExpanded(!window.matchMedia("(max-width: 899px)").matches);
+      setShowCollectionForm(false);
+      setQuery("");
+      showNotice(existing ? "Collection updated." : "Collection created.");
+      return;
+    }
     const collectionId = values.id || crypto.randomUUID();
     const nextCollections = values.id
       ? collections.map((collection) => collection.id === values.id
@@ -436,8 +628,20 @@ function App() {
     }
   }
 
-  function deleteCollection() {
+  async function deleteCollection() {
     if (!collectionToDelete) return;
+    if (user) {
+      const removed = collectionToDelete;
+      if (!await runCloud(() => cloud.deleteCollection(removed.id), "This collection couldn't be deleted. Try again in a moment.")) return;
+      setCollections((current) => current.filter((collection) => collection.id !== removed.id));
+      if (selectedCollectionId === removed.id) {
+        setSelectedCollectionId(null);
+        setQuery("");
+      }
+      setCollectionToDelete(null);
+      showNotice(`“${removed.name}” was deleted. Its mixes are still in your archive.`);
+      return;
+    }
     const nextCollections = collections.filter((collection) => collection.id !== collectionToDelete.id);
     if (persistCollections(nextCollections)) {
       if (selectedCollectionId === collectionToDelete.id) {
@@ -449,7 +653,20 @@ function App() {
     }
   }
 
-  function saveMix(formValues) {
+  async function saveMix(formValues) {
+    if (user) {
+      const editing = mixToEdit;
+      const saved = await runCloud(
+        () => cloud.saveMix(userId, formValues, editing),
+        "This mix couldn't be saved to your account. Try again in a moment.",
+      );
+      if (!saved) return;
+      setMixes((current) => (editing ? current.map((mix) => (mix.id === saved.id ? saved : mix)) : [saved, ...current]));
+      setShowForm(false);
+      setMixToEdit(null);
+      showNotice(editing ? "Mix updated." : "Mix saved to your archive.");
+      return;
+    }
     const nextMixes = mixToEdit
       ? mixes.map((mix) => mix.id === mixToEdit.id ? { ...mix, ...formValues } : mix)
       : [{
@@ -465,22 +682,31 @@ function App() {
   }
 
   function closeMixForm() {
+    if (busy) return;
     setShowForm(false);
     setMixToEdit(null);
   }
 
-  function editMix(mix) {
+  function openMixForm(mix = null) {
+    if (user) setStorageError("");
     setMixToEdit(mix);
     setShowForm(true);
   }
 
+  function editMix(mix) {
+    openMixForm(mix);
+  }
+
   function shareLink(kind, data, title) {
     try {
+      // Account photos are private links that expire, so they never go into a share link.
+      const shareable = ({ id, createdAt, imagePath, ...mix }) => ({ ...mix, image: mix.image.startsWith("data:") ? mix.image : "" });
+      const sharedMixes = kind === "mix" ? [data] : data.mixes;
+      let photosOmitted = sharedMixes.some((mix) => mix.image && !mix.image.startsWith("data:"));
       let payload = kind === "mix"
-        ? { version: 1, kind, mix: data }
-        : { version: 1, kind, name: data.name, mixes: data.mixes };
+        ? { version: 1, kind, mix: shareable(data) }
+        : { version: 1, kind, name: data.name, mixes: data.mixes.map(shareable) };
       let url = encodeSharedLink(payload);
-      let photosOmitted = false;
       if (url.length > MAX_SHARE_URL_LENGTH) {
         payload = kind === "mix"
           ? { ...payload, mix: { ...payload.mix, image: "" } }
@@ -525,9 +751,31 @@ function App() {
     }
   }
 
-  function saveSharedLink() {
+  async function saveSharedLink() {
     if (!sharedLink || sharedLink.error) return false;
     const sharedMixes = sharedLink.kind === "mix" ? [sharedLink.mix] : sharedLink.mixes;
+    if (user) {
+      // Fresh ids every time, so saving the same link twice keeps two copies, as it does in the browser.
+      const incoming = sharedMixes.map((mix) => ({ ...mix, id: crypto.randomUUID(), createdAt: new Date().toISOString() }));
+      const archive = {
+        mixes: incoming,
+        collections: sharedLink.kind === "mix" ? [] : [{
+          id: crypto.randomUUID(),
+          name: sharedLink.name.trim() || "Shared collection",
+          mixIds: incoming.map((mix) => mix.id),
+          createdAt: new Date().toISOString(),
+        }],
+      };
+      const result = await runCloud(
+        () => cloud.importArchive(userId, archive, { label: "shared" }),
+        "This couldn't be saved to your account. Try again in a moment.",
+      );
+      if (!result) return false;
+      setMixes(result.archive.mixes);
+      setCollections(result.archive.collections);
+      showNotice(sharedLink.kind === "mix" ? "Mix saved to your account." : "Collection saved to your account.", 0);
+      return true;
+    }
     const importedMixes = sharedMixes.map((mix) => ({
       ...mix,
       id: crypto.randomUUID(),
@@ -555,7 +803,15 @@ function App() {
     return true;
   }
 
-  function deleteMix(id) {
+  async function deleteMix(id) {
+    if (user) {
+      const mix = mixes.find((item) => item.id === id);
+      if (!mix || !await runCloud(() => cloud.deleteMix(mix), "This mix couldn't be deleted. Try again in a moment.")) return;
+      setMixes((current) => current.filter((item) => item.id !== id));
+      setCollections((current) => current.map((collection) => ({ ...collection, mixIds: collection.mixIds.filter((mixId) => mixId !== id) })));
+      showNotice("Mix removed from your archive.");
+      return;
+    }
     const nextMixes = mixes.filter((mix) => mix.id !== id);
     const nextCollections = collections.map((collection) => ({
       ...collection,
@@ -682,7 +938,26 @@ function App() {
               />
             </div>
             <span className="topbar-divider" />
-            <span className="saved-status"><span className="status-dot" /> Saved in this browser</span>
+            {user ? (
+              <>
+                <span className={`saved-status ${archiveLoading || busy ? "syncing" : "synced"}`} title={`Signed in as ${user.email}`}>
+                  <span className="status-dot" /> {archiveLoading || busy ? "Syncing…" : "Synced to your account"}
+                </span>
+                <button className="account-button" onClick={signOut} title={`Signed in as ${user.email}. Sign out`} aria-label={`Sign out of ${user.email}`}>
+                  <span className="account-initial" aria-hidden="true">{(user.email || "?").charAt(0).toUpperCase()}</span>
+                  <LogOut size={15} /><span className="account-label">Sign out</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="saved-status"><span className="status-dot" /> Saved in this browser</span>
+                {supabase && (
+                  <button className="account-button sign-in" onClick={() => setShowSignIn(true)} aria-label="Sign in to sync your archive">
+                    <LogIn size={15} /><span className="account-label">Sign in</span>
+                  </button>
+                )}
+              </>
+            )}
             <span className="topbar-divider" />
             <span className="date-label">YOUR PAINT DESK</span>
           </div>
@@ -695,7 +970,7 @@ function App() {
               <h1>{pageTitle}<span className="heading-period">.</span></h1>
               <p className="heading-subtitle">{selectedCollection ? `A hand-picked collection of ${filteredMixes.length} ${filteredMixes.length === 1 ? "mix" : "mixes"}.` : "Every good colour has a story. Keep yours."}</p>
             </div>
-            <button className="primary-button" onClick={() => setShowForm(true)}>
+            <button className="primary-button" onClick={() => openMixForm()} disabled={archiveLoading}>
               <Plus size={18} strokeWidth={2.4} /> New colour mix
             </button>
           </div>
@@ -756,7 +1031,18 @@ function App() {
             {backupError && <div className="error-banner" role="alert">{backupError}</div>}
             {notice && <div className="success-banner" role="status"><Check size={16} />{notice}</div>}
 
-            {filteredMixes.length > 0 ? (
+            {archiveLoading ? (
+              <div className="archive-loading" role="status">
+                <LoaderCircle size={22} className="spin" />
+                <span>Loading your archive…</span>
+              </div>
+            ) : user && cloudStatus === "error" ? (
+              <div className="empty-search">
+                <h3>Your archive didn’t load</h3>
+                <p>Check your internet connection, then try again.</p>
+                <button className="primary-button" onClick={() => setCloudReload((count) => count + 1)}>Try again</button>
+              </div>
+            ) : filteredMixes.length > 0 ? (
               <div className="mix-grid">
                 {filteredMixes.map((mix) => (
                   <MixCard
@@ -792,7 +1078,7 @@ function App() {
                   <span className="empty-kicker">A FRESH PAGE</span>
                   <h3>Your next favourite<br />colour starts here.</h3>
                   <p>Mix a colour you love? Save the paints, drop counts, and a photo so you can recreate it whenever inspiration strikes.</p>
-                  <button className="primary-button" onClick={() => setShowForm(true)}><Plus size={17} /> Log your first mix</button>
+                  <button className="primary-button" onClick={() => openMixForm()}><Plus size={17} /> Log your first mix</button>
                 </div>
                 <div className="empty-side-note"><span>01</span><i /> YOUR COLOUR STORY BEGINS</div>
               </div>
@@ -803,14 +1089,16 @@ function App() {
         </section>
       </main>
 
-      {showForm && <MixForm mix={mixToEdit} onClose={closeMixForm} onSave={saveMix} />}
+      {showForm && <MixForm mix={mixToEdit} onClose={closeMixForm} onSave={saveMix} busy={busy} saveError={user ? storageError : ""} />}
       {showCollectionForm && (
         <CollectionForm
           mixes={mixes}
           collections={collections}
           collection={showCollectionForm === "edit" ? selectedCollection : null}
-          onClose={() => setShowCollectionForm(false)}
+          onClose={() => { if (!busy) setShowCollectionForm(false); }}
           onSave={saveCollection}
+          busy={busy}
+          saveError={user ? storageError : ""}
         />
       )}
       {collectionToDelete && (
@@ -821,8 +1109,8 @@ function App() {
             <p id="delete-collection-description"><strong>{collectionToDelete.name}</strong> will be removed. Its mixes will remain in your archive.</p>
             {storageError && <div className="form-error" role="alert">{storageError}</div>}
             <div className="confirm-actions">
-              <button autoFocus onClick={() => setCollectionToDelete(null)}>Cancel</button>
-              <button className="confirm-delete" onClick={deleteCollection}>Delete collection</button>
+              <button autoFocus onClick={() => setCollectionToDelete(null)} disabled={busy}>Cancel</button>
+              <button className="confirm-delete" onClick={deleteCollection} disabled={busy}>{busy ? "Deleting…" : "Delete collection"}</button>
             </div>
           </section>
         </div>
@@ -834,18 +1122,113 @@ function App() {
             <h2 id="import-title">Import this backup?</h2>
             <p id="import-description">
               It contains <strong>{pendingImport.mixes.length} {pendingImport.mixes.length === 1 ? "mix" : "mixes"}</strong> and <strong>{pendingImport.collections.length} {pendingImport.collections.length === 1 ? "collection" : "collections"}</strong>.
-              {" "}Add them to your archive, or replace everything in this browser with the backup.
+              {" "}Add them to your archive, or replace everything {user ? "in your account" : "in this browser"} with the backup.
             </p>
             {mixes.length > 0 && <p className="import-warning">Replacing deletes your current {mixes.length} {mixes.length === 1 ? "mix" : "mixes"}. Export a backup first if you might want them later.</p>}
             {storageError && <div className="form-error" role="alert">{storageError}</div>}
             <div className="confirm-actions import-actions">
-              <button onClick={() => setPendingImport(null)}>Cancel</button>
-              <button className="confirm-delete" onClick={() => importBackup("replace")}>Replace archive</button>
-              <button autoFocus className="confirm-primary" onClick={() => importBackup("merge")}>Add to archive</button>
+              <button onClick={() => setPendingImport(null)} disabled={busy}>Cancel</button>
+              <button className="confirm-delete" onClick={() => importBackup("replace")} disabled={busy}>Replace archive</button>
+              <button autoFocus className="confirm-primary" onClick={() => importBackup("merge")} disabled={busy}>{busy ? "Importing…" : "Add to archive"}</button>
             </div>
           </section>
         </div>
       )}
+      {showSignIn && <SignInDialog onClose={() => setShowSignIn(false)} />}
+      {moveOffer && (
+        <div className="modal-backdrop collection-delete-backdrop">
+          <section className="collection-delete-dialog import-dialog" role="dialog" aria-modal="true" aria-labelledby="move-title" aria-describedby="move-description">
+            <span className="confirm-icon import-icon"><Upload size={18} /></span>
+            <h2 id="move-title">Move this browser’s mixes to your account?</h2>
+            <p id="move-description">
+              This browser has <strong>{moveOffer.mixes.length} {moveOffer.mixes.length === 1 ? "mix" : "mixes"}</strong> and <strong>{moveOffer.collections.length} {moveOffer.collections.length === 1 ? "collection" : "collections"}</strong> saved before you signed in.
+              {" "}Moving them adds them to your account so they appear on every device, then clears them from this browser.
+            </p>
+            {storageError && <div className="form-error" role="alert">{storageError}</div>}
+            <div className="confirm-actions import-actions">
+              <button onClick={keepLocalArchive} disabled={busy}>Keep them here</button>
+              <button autoFocus className="confirm-primary" onClick={moveLocalArchive} disabled={busy}>{busy ? "Moving…" : "Move to my account"}</button>
+            </div>
+          </section>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SignInDialog({ onClose }) {
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState("idle"); // idle | sending | sent
+  const [error, setError] = useState("");
+
+  async function sendLink(event) {
+    event.preventDefault();
+    const address = email.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
+      setError("Enter a full email address, like name@example.com.");
+      return;
+    }
+    setStatus("sending");
+    setError("");
+    const { error: sendError } = await supabase.auth.signInWithOtp({
+      email: address,
+      options: { emailRedirectTo: `${window.location.origin}${window.location.pathname}` },
+    });
+    if (sendError) {
+      console.error("Could not send the sign-in link:", sendError);
+      setStatus("idle");
+      setError(sendError.status === 429 || /rate limit/i.test(sendError.message)
+        ? "Too many sign-in emails were sent recently. Wait a few minutes, then try again."
+        : "The sign-in email couldn't be sent. Check the address and your connection, then try again.");
+      return;
+    }
+    setStatus("sent");
+  }
+
+  return (
+    <div className="modal-backdrop collection-delete-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="collection-delete-dialog sign-in-dialog" role="dialog" aria-modal="true" aria-labelledby="sign-in-title" aria-describedby="sign-in-description">
+        <button className="modal-close sign-in-close" onClick={onClose} aria-label="Close sign in"><X size={17} /></button>
+        <span className="confirm-icon import-icon"><Mail size={18} /></span>
+        {status === "sent" ? (
+          <>
+            <h2 id="sign-in-title">Check your inbox</h2>
+            <p id="sign-in-description">
+              We sent a sign-in link to <strong>{email.trim()}</strong>. Open it on this device, in this browser, to finish signing in.
+            </p>
+            <p className="sign-in-hint">No email after a minute? Check your spam folder.</p>
+            <div className="confirm-actions">
+              <button onClick={() => { setStatus("idle"); setError(""); }}>Use a different email</button>
+              <button className="confirm-primary" onClick={onClose}>Done</button>
+            </div>
+          </>
+        ) : (
+          <form onSubmit={sendLink} className="sign-in-form" noValidate>
+            <h2 id="sign-in-title">Sync your archive</h2>
+            <p id="sign-in-description">Sign in to keep your mixes in your account and use them on any device. No password needed: we’ll email you a link.</p>
+            <label className="field-label sign-in-field">
+              <span className="field-label-text">Email address</span>
+              <input
+                className="text-input"
+                type="email"
+                autoComplete="email"
+                inputMode="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="name@example.com"
+                autoFocus
+              />
+            </label>
+            {error && <div className="form-error" role="alert">{error}</div>}
+            <div className="confirm-actions">
+              <button type="button" onClick={onClose}>Cancel</button>
+              <button type="submit" className="confirm-primary" disabled={status === "sending"}>
+                {status === "sending" ? "Sending…" : "Email me a sign-in link"}
+              </button>
+            </div>
+          </form>
+        )}
+      </section>
     </div>
   );
 }
@@ -882,7 +1265,7 @@ function SharedPage({ payload, onSave, notice, storageError }) {
             <button
               className="primary-button shared-home-link"
               disabled={saved}
-              onClick={() => setSaved(onSave())}
+              onClick={async () => setSaved(await onSave())}
             >
               {saved ? "Saved to my archive" : isCollection ? "Save collection to my archive" : "Save mix to my archive"}
             </button>
@@ -1004,7 +1387,7 @@ function MixCard({ mix, onDelete, onEdit, onShare }) {
   );
 }
 
-function CollectionForm({ mixes, collections, collection, onClose, onSave }) {
+function CollectionForm({ mixes, collections, collection, onClose, onSave, busy = false, saveError = "" }) {
   const [name, setName] = useState(collection?.name || "");
   const [selectedIds, setSelectedIds] = useState(collection?.mixIds || []);
   const [error, setError] = useState("");
@@ -1017,6 +1400,7 @@ function CollectionForm({ mixes, collections, collection, onClose, onSave }) {
 
   function submit(event) {
     event.preventDefault();
+    if (busy) return;
     const cleanName = name.trim();
     if (!cleanName) {
       setError("Give your collection a name.");
@@ -1071,13 +1455,15 @@ function CollectionForm({ mixes, collections, collection, onClose, onSave }) {
             ) : (
               <div className="collection-no-mixes"><Archive size={20} /><span>Save a colour mix first. You can add it here later.</span></div>
             )}
-            {error && <div className="form-error" role="alert">{error}</div>}
+            {(error || saveError) && <div className="form-error" role="alert">{error || saveError}</div>}
           </div>
           <div className="modal-footer">
             <span><span className="local-lock">◈</span> Mixes stay in your archive</span>
             <div>
               <button className="cancel-button" type="button" onClick={onClose}>Cancel</button>
-              <button className="primary-button save-button" type="submit"><Check size={16} /> {collection ? "Save collection" : "Create collection"}</button>
+              <button className="primary-button save-button" type="submit" disabled={busy}>
+                {busy ? <LoaderCircle size={16} className="spin" /> : <Check size={16} />} {busy ? "Saving…" : collection ? "Save collection" : "Create collection"}
+              </button>
             </div>
           </div>
         </form>
@@ -1086,7 +1472,7 @@ function CollectionForm({ mixes, collections, collection, onClose, onSave }) {
   );
 }
 
-function MixForm({ mix, onClose, onSave }) {
+function MixForm({ mix, onClose, onSave, busy = false, saveError = "" }) {
   const [name, setName] = useState(mix?.name || "");
   const [color, setColor] = useState(mix?.color || "#7187a1");
   const [notes, setNotes] = useState(mix?.notes || "");
@@ -1127,6 +1513,8 @@ function MixForm({ mix, onClose, onSave }) {
       setSampleMessage("Drag to target a pixel; release to sample the exact colour under the cursor.");
     };
     source.onerror = () => setError("The photo could not be prepared for colour sampling.");
+    // Account photos come from Supabase Storage; reading their pixels needs a CORS-enabled load.
+    if (!image.startsWith("data:")) source.crossOrigin = "anonymous";
     source.src = image;
 
     return () => {
@@ -1368,6 +1756,7 @@ function MixForm({ mix, onClose, onSave }) {
       setError("Each paint needs a whole number of drops (at least 1).");
       return;
     }
+    if (busy) return;
     onSave({ name: name.trim(), color, notes: notes.trim(), image, paints: cleanPaints });
   }
 
@@ -1474,11 +1863,16 @@ function MixForm({ mix, onClose, onSave }) {
                 )}
               </div>
             </div>
-            {error && <div className="form-error" role="alert">{error}</div>}
+            {(error || saveError) && <div className="form-error" role="alert">{error || saveError}</div>}
           </div>
           <div className="modal-footer">
             <span><span className="local-lock">◈</span> Saved privately on this device</span>
-            <div><button className="cancel-button" type="button" onClick={onClose}>Cancel</button><button className="primary-button save-button" type="submit"><Check size={16} /> {mix ? "Save changes" : "Save mix"}</button></div>
+            <div>
+              <button className="cancel-button" type="button" onClick={onClose} disabled={busy}>Cancel</button>
+              <button className="primary-button save-button" type="submit" disabled={busy}>
+                {busy ? <LoaderCircle size={16} className="spin" /> : <Check size={16} />} {busy ? "Saving…" : mix ? "Save changes" : "Save mix"}
+              </button>
+            </div>
           </div>
         </form>
       </section>
