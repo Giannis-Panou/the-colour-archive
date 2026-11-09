@@ -31,6 +31,16 @@ import {
 } from "lucide-react";
 import { hasStoredSession, supabase } from "./supabase.js";
 import * as cloud from "./cloud.js";
+import {
+  compressedLink,
+  createShortLink,
+  homeUrl,
+  initialShareState,
+  isSharePhotoUrl,
+  isValidMix,
+  packPayload,
+  resolveShare,
+} from "./sharing.js";
 
 const STORAGE_KEY = "the-colour-archive-mixes";
 const COLLECTIONS_STORAGE_KEY = "the-colour-archive-collections";
@@ -40,26 +50,6 @@ const BACKUP_APP_ID = "the-colour-archive";
 const BACKUP_VERSION = 1;
 const MAX_BACKUP_FILE_SIZE = 50 * 1024 * 1024;
 const MIGRATION_DISMISSED_KEY = "the-colour-archive-move-dismissed";
-
-// The recipe fields every mix needs, whether it comes from storage, a share link or a backup.
-function isValidMix(mix) {
-  return Boolean(
-    mix &&
-    typeof mix.name === "string" &&
-    typeof mix.color === "string" &&
-    /^#[\da-f]{6}$/i.test(mix.color) &&
-    typeof mix.notes === "string" &&
-    Array.isArray(mix.paints) &&
-    mix.paints.every((paint) =>
-      paint &&
-      typeof paint.name === "string" &&
-      typeof paint.brand === "string" &&
-      typeof paint.drops === "string" &&
-      typeof paint.swatch === "string",
-    ) &&
-    (mix.image === "" || (typeof mix.image === "string" && /^data:image\/(?:jpeg|png|webp);base64,[\da-z+/=]+$/i.test(mix.image))),
-  );
-}
 
 // A mix saved in an archive also carries its identity and creation date.
 function isStoredMix(mix) {
@@ -117,33 +107,6 @@ function parseBackup(text) {
   return { mixes: data.mixes, collections: data.collections };
 }
 
-function decodeSharedLink() {
-  const token = new URLSearchParams(window.location.hash.slice(1)).get("share");
-  if (!token) return null;
-
-  try {
-    const payload = JSON.parse(token);
-    if (payload?.version !== 1 || !["mix", "collection"].includes(payload.kind)) {
-      throw new Error("The shared link is not in a supported format.");
-    }
-    if (payload.kind === "mix" && isValidMix(payload.mix)) return payload;
-    if (
-      payload.kind === "collection" &&
-      typeof payload.name === "string" &&
-      Array.isArray(payload.mixes) &&
-      payload.mixes.every(isValidMix)
-    ) return payload;
-    throw new Error("The shared link contains invalid mix data.");
-  } catch (error) {
-    console.error("Could not read the shared colour link:", error);
-    return { error: "This shared link is invalid or could not be opened." };
-  }
-}
-
-function encodeSharedLink(payload) {
-  const encoded = encodeURIComponent(JSON.stringify(payload));
-  return `${window.location.origin}${window.location.pathname}#share=${encoded}`;
-}
 
 function readMixes() {
   try {
@@ -215,7 +178,8 @@ function App() {
   const [query, setQuery] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [mixToEdit, setMixToEdit] = useState(null);
-  const [sharedLink, setSharedLink] = useState(decodeSharedLink);
+  const [sharedLink, setSharedLink] = useState(initialShareState);
+  const [shareTarget, setShareTarget] = useState(null);
   const [shareError, setShareError] = useState("");
   // false when closed, "new" to create a collection, "edit" to manage the selected one.
   const [showCollectionForm, setShowCollectionForm] = useState(false);
@@ -235,12 +199,24 @@ function App() {
   const backupInput = useRef(null);
   const selectedCollection = collections.find((collection) => collection.id === selectedCollectionId) || null;
 
+  // Open whatever share the address holds: a short /s/ link, a compressed #s= link or an old #share= link.
   useEffect(() => {
-    function updateSharedLink() {
-      setSharedLink(decodeSharedLink());
+    let latest = 0;
+    async function updateSharedLink() {
+      const request = latest += 1;
+      const initial = initialShareState();
+      setSharedLink(initial);
+      if (!initial?.loading) return;
+      const resolved = await resolveShare();
+      if (request === latest) setSharedLink(resolved);
     }
+    updateSharedLink();
     window.addEventListener("hashchange", updateSharedLink);
-    return () => window.removeEventListener("hashchange", updateSharedLink);
+    window.addEventListener("popstate", updateSharedLink);
+    return () => {
+      window.removeEventListener("hashchange", updateSharedLink);
+      window.removeEventListener("popstate", updateSharedLink);
+    };
   }, []);
 
   useEffect(() => () => window.clearTimeout(noticeTimer.current), []);
@@ -724,62 +700,48 @@ function App() {
   }
 
   function shareLink(kind, data, title) {
-    try {
-      // Account photos are private links that expire, so they never go into a share link.
-      const shareable = ({ id, createdAt, imagePath, ...mix }) => ({ ...mix, image: mix.image.startsWith("data:") ? mix.image : "" });
-      const sharedMixes = kind === "mix" ? [data] : data.mixes;
-      let photosOmitted = sharedMixes.some((mix) => mix.image && !mix.image.startsWith("data:"));
-      let payload = kind === "mix"
-        ? { version: 1, kind, mix: shareable(data) }
-        : { version: 1, kind, name: data.name, mixes: data.mixes.map(shareable) };
-      let url = encodeSharedLink(payload);
-      if (url.length > MAX_SHARE_URL_LENGTH) {
-        payload = kind === "mix"
-          ? { ...payload, mix: { ...payload.mix, image: "" } }
-          : { ...payload, mixes: payload.mixes.map((mix) => ({ ...mix, image: "" })) };
-        url = encodeSharedLink(payload);
-        photosOmitted = true;
-      }
-      if (url.length > MAX_SHARE_URL_LENGTH) {
-        throw new Error("This share link is too large. Try sharing fewer mixes or share them individually.");
-      }
+    setShareError("");
+    setShareTarget({ kind, data, title });
+  }
 
-      setShareError("");
-      const onSuccess = (copied) => {
-        showNotice(`${photosOmitted ? "Link shared; photos were omitted to keep it short." : "Share link ready."}${copied ? " Copied to clipboard." : ""}`, 4000);
-      };
-      const onError = (error) => {
-        if (error.name === "AbortError") return;
-        if (navigator.clipboard?.writeText) {
-          navigator.clipboard.writeText(url).then(
-            () => onSuccess(true),
-            (clipboardError) => {
-              console.error("Could not copy the share link:", clipboardError);
-              setShareError("Could not share or copy the link. Check your browser permissions and try again.");
-            },
-          );
-        } else {
-          console.error("Could not share colour mix:", error);
-          setShareError("Sharing is not available in this browser.");
-        }
-      };
+  // Builds the link for the share dialog: a short link when signed in, otherwise a compressed one.
+  async function createShareLink({ kind, data }) {
+    const clean = ({ id, createdAt, imagePath, ...mix }) => mix;
+    const payload = kind === "mix"
+      ? { version: 1, kind, mix: clean(data) }
+      : { version: 1, kind, name: data.name, mixes: data.mixes.map(clean) };
+    const photoCount = (kind === "mix" ? [data] : data.mixes).filter((mix) => mix.image).length;
 
-      if (navigator.share) {
-        navigator.share({ title, text: title, url }).then(() => onSuccess(false), onError);
-      } else if (navigator.clipboard?.writeText) {
-        navigator.clipboard.writeText(url).then(() => onSuccess(true), onError);
-      } else {
-        throw new Error("Sharing is not available in this browser.");
+    if (user && supabase) {
+      try {
+        return { ...(await createShortLink(payload)), short: true };
+      } catch (error) {
+        console.error("Could not create a short link; using a compressed link instead:", error);
       }
-    } catch (error) {
-      console.error("Could not share colour mix:", error);
-      setShareError(error.message || "Could not create a share link.");
     }
+
+    // Compressed link: only embedded photos can travel inside it, and only while it stays a sensible length.
+    const embeddedOnly = (mix) => ({ ...mix, image: mix.image.startsWith("data:") ? mix.image : "" });
+    const noPhotos = (mix) => ({ ...mix, image: "" });
+    const build = async (transform) => {
+      const linkPayload = kind === "mix" ? { ...payload, mix: transform(payload.mix) } : { ...payload, mixes: payload.mixes.map(transform) };
+      const included = (kind === "mix" ? [linkPayload.mix] : linkPayload.mixes).filter((mix) => mix.image).length;
+      return { url: compressedLink(await packPayload(linkPayload)), included };
+    };
+    let link = await build(embeddedOnly);
+    if (link.url.length > MAX_SHARE_URL_LENGTH) link = await build(noPhotos);
+    if (link.url.length > MAX_SHARE_URL_LENGTH) {
+      throw new Error("This collection is too large for one link. Share fewer mixes, or sign in to get a short link.");
+    }
+    return { url: link.url, short: false, photosIncluded: link.included, photosOmitted: photoCount - link.included };
   }
 
   async function saveSharedLink() {
-    if (!sharedLink || sharedLink.error) return false;
-    const sharedMixes = sharedLink.kind === "mix" ? [sharedLink.mix] : sharedLink.mixes;
+    if (!sharedLink || sharedLink.error || sharedLink.loading) return false;
+    // Photos in short links live in the public share folder; save embedded copies instead.
+    const sharedMixes = await Promise.all((sharedLink.kind === "mix" ? [sharedLink.mix] : sharedLink.mixes).map(async (mix) => (
+      isSharePhotoUrl(mix.image) ? { ...mix, image: await cloud.photoAsDataUrl(mix.image).catch(() => "") } : mix
+    )));
     if (user) {
       // Fresh ids every time, so saving the same link twice keeps two copies, as it does in the browser.
       const incoming = sharedMixes.map((mix) => ({ ...mix, id: crypto.randomUUID(), createdAt: new Date().toISOString() }));
@@ -1185,6 +1147,15 @@ function App() {
         </div>
       )}
       {showSignIn && <SignInDialog onClose={() => setShowSignIn(false)} />}
+      {shareTarget && (
+        <ShareDialog
+          target={shareTarget}
+          signedIn={Boolean(user)}
+          onCreate={createShareLink}
+          onSignIn={() => { setShareTarget(null); setShowSignIn(true); }}
+          onClose={() => setShareTarget(null)}
+        />
+      )}
       {showSetPassword && (
         <SetPasswordDialog
           onClose={() => setShowSetPassword(false)}
@@ -1286,7 +1257,7 @@ function SignInDialog({ onClose }) {
   const [status, setStatus] = useState("idle"); // idle | working | sent
   const [sentKind, setSentKind] = useState(""); // link | confirm | reset
   const [error, setError] = useState("");
-  const redirectTo = `${window.location.origin}${window.location.pathname}`;
+  const redirectTo = homeUrl();
 
   function switchTo(nextMethod, nextMode = "signin") {
     setMethod(nextMethod);
@@ -1648,25 +1619,140 @@ function ProfilePage({ user, displayName, mixes, collections, onUpdateProfile, o
   );
 }
 
+function ShareDialog({ target, signedIn, onCreate, onSignIn, onClose }) {
+  const [state, setState] = useState({ status: "creating" });
+  const [copyState, setCopyState] = useState("idle"); // idle | copied | manual
+  const request = useRef(null);
+  const linkInput = useRef(null);
+  const mixes = target.kind === "mix" ? [target.data] : target.data.mixes;
+  const photoCount = mixes.filter((mix) => mix.image).length;
+  const canShare = typeof navigator.share === "function";
+
+  // One request per dialog, even when React runs effects twice in development.
+  useEffect(() => {
+    if (!request.current) request.current = onCreate(target);
+    let cancelled = false;
+    request.current.then(
+      (result) => { if (!cancelled) setState({ status: "ready", ...result }); },
+      (error) => { if (!cancelled) setState({ status: "error", message: error.message || "The link couldn't be created. Try again." }); },
+    );
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    function handleEscape(event) { if (event.key === "Escape") onClose(); }
+    document.addEventListener("keydown", handleEscape);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", handleEscape);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [onClose]);
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(state.url);
+      setCopyState("copied");
+      window.setTimeout(() => setCopyState("idle"), 2500);
+    } catch (error) {
+      console.error("Could not copy the share link:", error);
+      linkInput.current?.select();
+      setCopyState("manual");
+    }
+  }
+
+  async function shareNatively() {
+    try {
+      await navigator.share({ title: target.title, text: `${target.title} · The Colour Archive`, url: state.url });
+    } catch (error) {
+      if (error.name !== "AbortError") console.error("Could not open the share sheet:", error);
+    }
+  }
+
+  const summary = `${mixes.length} ${mixes.length === 1 ? "mix" : "mixes"}${photoCount ? ` · ${photoCount} ${photoCount === 1 ? "photo" : "photos"}` : ""}`;
+
+  return (
+    <div className="modal-backdrop collection-delete-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="collection-delete-dialog sign-in-dialog share-dialog" role="dialog" aria-modal="true" aria-labelledby="share-title" aria-describedby="share-description">
+        <button className="modal-close sign-in-close" onClick={onClose} aria-label="Close sharing"><X size={17} /></button>
+        <span className="confirm-icon import-icon"><Share2 size={18} /></span>
+        <h2 id="share-title">Share {target.kind === "mix" ? "this mix" : "this collection"}</h2>
+        <p id="share-description">Anyone with the link can see the recipe and save a copy to their own archive.</p>
+
+        <div className="share-preview" aria-label={`${target.title}: ${summary}`}>
+          <span className="share-swatches" aria-hidden="true">
+            {mixes.slice(0, 6).map((mix, index) => <i key={`${mix.color}-${index}`} style={{ backgroundColor: mix.color }} />)}
+          </span>
+          <span className="share-preview-copy"><strong>{target.title}</strong><small>{summary}</small></span>
+        </div>
+
+        {state.status === "creating" && (
+          <div className="share-creating" role="status"><LoaderCircle size={18} className="spin" /> Creating your link…</div>
+        )}
+        {state.status === "error" && <div className="form-error" role="alert">{state.message}</div>}
+        {state.status === "ready" && (
+          <>
+            <label className="field-label share-link-field" htmlFor="share-link">
+              <span className="field-label-text">{state.short ? "Short link" : "Link"}</span>
+              <span className="share-link-row">
+                <input id="share-link" ref={linkInput} className="text-input" readOnly value={state.url} onFocus={(event) => event.target.select()} />
+                <button type="button" className={`share-copy ${copyState === "copied" ? "copied" : ""}`} onClick={copyLink} aria-live="polite">
+                  {copyState === "copied" ? <><Check size={15} /> Copied</> : "Copy"}
+                </button>
+              </span>
+            </label>
+            <ul className="share-notes">
+              {copyState === "manual" && <li className="share-note-warn">Your browser blocked copying. The link is selected: press Ctrl+C (or ⌘C) to copy it.</li>}
+              {state.short
+                ? <li>A snapshot: changes you make later won’t change what this link shows.</li>
+                : <li>The whole recipe travels inside this link, so it works without an account.</li>}
+              {state.photosIncluded > 0 && <li>Includes {state.photosIncluded} {state.photosIncluded === 1 ? "photo" : "photos"}.</li>}
+              {state.photosOmitted > 0 && (
+                <li>{state.photosOmitted} {state.photosOmitted === 1 ? "photo was" : "photos were"} left out{state.short ? "." : " to keep the link short."}</li>
+              )}
+              {!signedIn && onSignIn && (
+                <li><button type="button" className="text-button" onClick={onSignIn}>Sign in</button> to get short links that include photos.</li>
+              )}
+            </ul>
+          </>
+        )}
+
+        <div className="confirm-actions">
+          <button type="button" onClick={onClose}>Done</button>
+          {canShare && state.status === "ready" && (
+            <button type="button" className="confirm-primary" onClick={shareNatively}><Share2 size={15} /> Share…</button>
+          )}
+          {!canShare && state.status === "ready" && (
+            <button type="button" className="confirm-primary" onClick={copyLink}>{copyState === "copied" ? "Copied" : "Copy link"}</button>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function SharedPage({ payload, onSave, notice, storageError }) {
   const [saved, setSaved] = useState(false);
   const isCollection = payload.kind === "collection";
   const mixes = isCollection ? payload.mixes : payload.mix ? [payload.mix] : [];
-  const title = payload.error ? "This share link is unavailable" : isCollection ? payload.name : payload.mix.name;
+  const title = payload.loading ? "Opening shared recipe" : payload.error ? "This share link is unavailable" : isCollection ? payload.name : payload.mix.name;
 
   return (
     <main className="shared-page">
       <header className="shared-page-header">
-        <a className="shared-brand" href={`${window.location.origin}${window.location.pathname}`}>
+        <a className="shared-brand" href={homeUrl()}>
           <span className="brand-mark"><Layers3 size={21} strokeWidth={2.2} /></span>
           <span className="brand-name">the colour<br />archive</span>
         </a>
         <span className="shared-label">SHARED PAINT RECIPE</span>
       </header>
       <section className="shared-page-content">
-        <span className="eyebrow"><span className="eyebrow-line" /> {isCollection ? "A COLLECTION TO EXPLORE" : "A COLOUR MIX TO TRY"}</span>
-        <h1>{title}<span className="heading-period">.</span></h1>
-        {payload.error ? (
+        <span className="eyebrow"><span className="eyebrow-line" /> {payload.loading ? "SHARED PAINT RECIPE" : isCollection ? "A COLLECTION TO EXPLORE" : "A COLOUR MIX TO TRY"}</span>
+        <h1>{title}{payload.loading ? "…" : <span className="heading-period">.</span>}</h1>
+        {payload.loading ? (
+          <div className="archive-loading" role="status"><LoaderCircle size={22} className="spin" /><span>Loading the recipe…</span></div>
+        ) : payload.error ? (
           <p className="shared-intro" role="alert">{payload.error}</p>
         ) : (
           <>
@@ -1686,7 +1772,7 @@ function SharedPage({ payload, onSave, notice, storageError }) {
             </button>
           </>
         )}
-        <a className="shared-archive-link" href={`${window.location.origin}${window.location.pathname}`}>Open my archive</a>
+        <a className="shared-archive-link" href={homeUrl()}>Open my archive</a>
       </section>
     </main>
   );

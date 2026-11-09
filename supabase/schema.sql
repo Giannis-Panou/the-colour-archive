@@ -113,3 +113,60 @@ create policy "Own mix photos: replace" on storage.objects for update to authent
   with check (bucket_id = 'mix-photos' and (storage.foldername(name))[1] = (select auth.uid())::text);
 create policy "Own mix photos: delete" on storage.objects for delete to authenticated
   using (bucket_id = 'mix-photos' and (storage.foldername(name))[1] = (select auth.uid())::text);
+
+-- ---------- Short share links: /s/<10-character code> ----------
+-- A share is a frozen snapshot of a mix or collection. Only its creator can add or remove it;
+-- anyone with the exact code can open it through get_share(), but nobody can list shares.
+
+create table if not exists public.shares (
+  id          text primary key check (id ~ '^[A-Za-z0-9]{10}$'),
+  user_id     uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  payload     jsonb not null check (jsonb_typeof(payload) = 'object' and octet_length(payload::text) <= 100000),
+  created_at  timestamptz not null default now()
+);
+create index if not exists shares_user_id_idx on public.shares (user_id);
+
+grant select, insert, update, delete on public.shares to authenticated;
+revoke all on public.shares from anon;
+alter table public.shares enable row level security;
+
+drop policy if exists "Own shares: read" on public.shares;
+drop policy if exists "Own shares: add" on public.shares;
+drop policy if exists "Own shares: edit" on public.shares;
+drop policy if exists "Own shares: delete" on public.shares;
+create policy "Own shares: read" on public.shares for select to authenticated using ((select auth.uid()) = user_id);
+create policy "Own shares: add" on public.shares for insert to authenticated with check ((select auth.uid()) = user_id);
+create policy "Own shares: edit" on public.shares for update to authenticated
+  using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
+create policy "Own shares: delete" on public.shares for delete to authenticated using ((select auth.uid()) = user_id);
+
+-- Opens one share by its exact code. Runs with the table owner's rights so visitors can read a
+-- single snapshot without any permission to browse the table.
+create or replace function public.get_share(share_id text) returns jsonb
+language sql stable security definer set search_path = '' as $$
+  select payload from public.shares where id = share_id;
+$$;
+revoke all on function public.get_share(text) from public;
+grant execute on function public.get_share(text) to anon, authenticated;
+
+-- Photos in shares are copies in a public bucket, one folder per share code.
+-- Anyone with a share link can see its photos; only the share's creator can add or remove them.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('share-photos', 'share-photos', true, 2097152, array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do nothing;
+
+drop policy if exists "Share photos: owner reads" on storage.objects;
+drop policy if exists "Share photos: owner uploads" on storage.objects;
+drop policy if exists "Share photos: owner deletes" on storage.objects;
+create policy "Share photos: owner reads" on storage.objects for select to authenticated using (
+  bucket_id = 'share-photos'
+  and exists (select 1 from public.shares s where s.id = (storage.foldername(name))[1] and s.user_id = (select auth.uid()))
+);
+create policy "Share photos: owner uploads" on storage.objects for insert to authenticated with check (
+  bucket_id = 'share-photos'
+  and exists (select 1 from public.shares s where s.id = (storage.foldername(name))[1] and s.user_id = (select auth.uid()))
+);
+create policy "Share photos: owner deletes" on storage.objects for delete to authenticated using (
+  bucket_id = 'share-photos'
+  and exists (select 1 from public.shares s where s.id = (storage.foldername(name))[1] and s.user_id = (select auth.uid()))
+);
