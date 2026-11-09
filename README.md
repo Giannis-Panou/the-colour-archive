@@ -42,27 +42,28 @@ Whoever opens a link can save the recipe to their own archive. Shared photos are
 ### Design
 
 - The "Workbench" look: a cutting-mat green sidebar, primer-grey surfaces and a paint-pot-cap yellow accent, with Barlow Condensed, Barlow and Space Mono.
-- Colours are defined as CSS custom properties in one block at the top of `src/styles.css`.
+- Colours are defined as CSS custom properties in one block at the top of `src/styles/styles.css`.
 - Text meets WCAG AA contrast, controls have visible focus states, and hover and enter animations respect `prefers-reduced-motion`.
 - Responsive from phone to desktop: a bottom collections bar on phones, a compact sidebar on tablets and a full, collapsible sidebar on desktops.
 
 ## Tech stack
 
-- [React 18](https://react.dev/) and [Vite 6](https://vite.dev/)
-- [Tailwind CSS 4](https://tailwindcss.com/) through `@tailwindcss/vite`, alongside custom CSS in `src/styles.css`
+- [React 18](https://react.dev/) with [TypeScript](https://www.typescriptlang.org/) (strict), built with [Vite 6](https://vite.dev/)
+- [React Router 7](https://reactrouter.com/) for addresses: `/`, `/collections/:id`, `/profile`, `/s/:code`
 - [Supabase](https://supabase.com/): Auth, Postgres with row-level security, and Storage
-- [Lucide](https://lucide.dev/) icons
+- Hand-written CSS with custom properties (`src/styles/`), and [Lucide](https://lucide.dev/) icons
+- [Vitest](https://vitest.dev/) unit tests, [Playwright](https://playwright.dev/) browser tests, [ESLint](https://eslint.org/) with the React Hooks rules
 - Deployed on [Netlify](https://www.netlify.com/)
 
 ## Getting started
 
-You need [Node.js](https://nodejs.org/) 18 or later.
+You need [Node.js](https://nodejs.org/) 20 or later.
 
 ```bash
 npm install
-npm run dev       # start the dev server at http://localhost:5173
-npm run build     # production build in dist/
-npm run preview   # serve the production build locally
+npm run dev         # start the dev server at http://localhost:5173
+npm run build       # type-check, then build to dist/
+npm run preview     # serve the production build locally
 ```
 
 Without any configuration the app runs in browser-only mode: everything works except signing in and short links.
@@ -84,23 +85,72 @@ Without any configuration the app runs in browser-only mode: everything works ex
 
 Supabase's built-in email sender only allows a few emails per hour. That's fine for testing, but before real users rely on sign-in emails, set up custom SMTP (for example [Resend](https://resend.com/) with your own domain) under **Authentication → Emails → SMTP Settings**.
 
+## Testing
+
+```bash
+npm run check       # everything below except the live tests
+npm run typecheck   # TypeScript, app and tests
+npm run lint        # ESLint, including the React Hooks rules
+npm test            # Vitest unit tests (validation, backups, share links, both stores)
+npm run test:e2e    # Playwright browser tests
+npm run test:live   # Playwright tests against the real Supabase project
+```
+
+- **Browser tests** (`e2e/`) start the dev server themselves:
+  - `archive.spec.ts` walks through the whole app signed out.
+  - `account.spec.ts` covers sign-in and the profile page against a mocked account.
+  - `security.spec.ts` builds the app, serves it with the headers from `netlify.toml`, and checks that the security policy holds and that hostile share links and backups do nothing.
+- **Live tests** (`e2e/live/`) use throwaway anonymous accounts on your Supabase project and delete everything they create:
+  - `cloud.spec.ts` covers sync, photos, short links, imports and the profile.
+  - `database-security.spec.ts` attacks the database as a visitor and as another user, including SQL injection.
+
+  Switch on **Authentication → Sign In / Providers → Allow anonymous sign-ins** while they run, and switch it off afterwards.
+- **Browser:** the tests use your installed Google Chrome. To use Playwright's own Chromium instead, run `npx playwright install chromium` and set `PLAYWRIGHT_BUNDLED_BROWSER=1`.
+
 ## Project structure
 
 ```
-├── index.html            # HTML entry, fonts and meta tags
-├── netlify.toml          # Netlify build, SPA redirect and security headers
-├── vite.config.js        # Vite + React + Tailwind plugins
-├── sample-archive.json   # Example archive to import
-├── supabase/
-│   └── schema.sql        # Tables, row-level security, share lookup, storage buckets
+├── index.html                # HTML entry, fonts and meta tags
+├── netlify.toml              # Netlify build, SPA redirect and security headers
+├── vite.config.ts            # Vite + React; Vitest settings
+├── eslint.config.js          # ESLint with TypeScript and React Hooks rules
+├── playwright.config.ts      # Browser tests (dev server and production build)
+├── playwright.live.config.ts # Browser tests against the real Supabase project
+├── sample-archive.json       # Example archive to import
+├── supabase/schema.sql       # Tables, row-level security, share lookup, storage buckets
+├── e2e/                      # Playwright tests and shared helpers
 └── src/
-    ├── main.jsx          # React root
-    ├── App.jsx           # App shell, forms, dialogs, profile page, colour sampler
-    ├── cloud.js          # Supabase data layer: load, save, import, photos
-    ├── sharing.js        # Share links: short, compressed and legacy; recipe validation
-    ├── supabase.js       # Supabase client (null when not configured)
-    └── styles.css        # Theme variables, layout, components and motion
+    ├── main.tsx              # React root and router
+    ├── App.tsx               # Routes, layout and the one open dialog
+    ├── types.ts              # Mix, Collection, Archive, share types
+    ├── pages/                # ArchivePage (archive and collections), ProfilePage
+    ├── components/
+    │   ├── Modal.tsx         # Accessible dialog: focus trap, Escape, scroll lock, focus return
+    │   ├── ConfirmDialog.tsx # Small confirm dialogs built on Modal
+    │   ├── layout/           # Sidebar, Topbar
+    │   ├── mixes/            # MixCard, MixSwatch, PaintList, MixForm, ColorSampler
+    │   ├── collections/      # CollectionForm
+    │   ├── sharing/          # ShareDialog, SharedPage
+    │   └── auth/             # SignInDialog, SetPasswordDialog, PasswordField
+    ├── hooks/
+    │   ├── useAuth.ts        # Supabase session, magic links, password recovery
+    │   ├── useArchive.ts     # The archive on screen and every change to it
+    │   ├── useSharedLink.ts  # The share in the address (/s/…, #s=…, #share=…)
+    │   └── useNotice.ts      # Success messages with one shared timer
+    ├── lib/
+    │   ├── stores/           # ArchiveStore interface, localStore (browser), cloudStore (Supabase)
+    │   ├── sharing.ts        # Short, compressed and old share links
+    │   ├── validation.ts     # Checks for anything from storage, links or backups
+    │   ├── backup.ts         # Backup files: read, write, download
+    │   ├── images.ts         # Photo resizing and conversion
+    │   ├── errors.ts         # Plain-language error messages
+    │   └── supabase.ts       # Supabase client (null when not configured)
+    └── styles/
+        ├── reset.css         # Base reset (from Tailwind's preflight, MIT)
+        └── styles.css        # Theme variables, layout, components and motion
 ```
+
+**How the pieces fit:** `useArchive` picks a store depending on whether you're signed in. `localStore` saves to the browser, and `cloudStore` saves to Supabase. Both implement the same `ArchiveStore` interface, so no component needs to know where data is saved. `App.tsx` holds the routes and a single `dialog` state, because only one dialog is ever open at a time.
 
 ## Data and privacy
 

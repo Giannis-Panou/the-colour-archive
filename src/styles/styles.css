@@ -1,4 +1,3 @@
-@import "tailwindcss";
 
 :root {
   font-family: var(--body);
@@ -606,19 +605,19 @@ h1, .section-title-row h2, .empty-copy h3, .empty-search h3, .modal-header h2, .
   .sidebar .collection-delete-button:hover { color: #fff; background: rgba(255,255,255,.12); }
 }
 
-/* The sidebar logo is a button that returns to My archive */
-button.brand { padding: 0; border: 0; border-radius: 10px; background: transparent; color: inherit; text-align: left; }
+/* The sidebar logo is a link back to My archive */
+.brand { padding: 0; border: 0; border-radius: 10px; background: transparent; color: inherit; text-align: left; }
 /* Hover: the pot-cap mark lifts and tilts, its three layers fan apart, and the name brightens */
-button.brand .brand-mark { box-shadow: 0 0 0 rgba(0,0,0,0); transition: background-color var(--t-fast) var(--ease), transform var(--t-med) var(--ease), box-shadow var(--t-med) var(--ease); }
-button.brand .brand-mark svg { overflow: visible; }
-button.brand .brand-mark path { transition: transform var(--t-med) var(--ease); }
-button.brand .brand-name { transition: color var(--t-fast) var(--ease), transform var(--t-med) var(--ease); }
-button.brand:hover .brand-mark { background: var(--accent); transform: translateY(-2px) rotate(-6deg); box-shadow: 0 8px 16px -8px rgba(0,0,0,.45); }
-button.brand:hover .brand-mark path:nth-child(1) { transform: translateY(-2px); }
-button.brand:hover .brand-mark path:nth-child(3) { transform: translateY(1.5px); }
-button.brand:hover .brand-name { color: #fff; transform: translateX(2px); }
-button.brand:active .brand-mark { transform: translateY(0) rotate(0) scale(.94); transition-duration: .08s; }
-.sidebar button.brand:focus-visible { outline-color: var(--accent-bright); outline-offset: 4px; }
+.brand .brand-mark { box-shadow: 0 0 0 rgba(0,0,0,0); transition: background-color var(--t-fast) var(--ease), transform var(--t-med) var(--ease), box-shadow var(--t-med) var(--ease); }
+.brand .brand-mark svg { overflow: visible; }
+.brand .brand-mark path { transition: transform var(--t-med) var(--ease); }
+.brand .brand-name { transition: color var(--t-fast) var(--ease), transform var(--t-med) var(--ease); }
+.brand:hover .brand-mark { background: var(--accent); transform: translateY(-2px) rotate(-6deg); box-shadow: 0 8px 16px -8px rgba(0,0,0,.45); }
+.brand:hover .brand-mark path:nth-child(1) { transform: translateY(-2px); }
+.brand:hover .brand-mark path:nth-child(3) { transform: translateY(1.5px); }
+.brand:hover .brand-name { color: #fff; transform: translateX(2px); }
+.brand:active .brand-mark { transform: translateY(0) rotate(0) scale(.94); transition-duration: .08s; }
+.sidebar .brand:focus-visible { outline-color: var(--accent-bright); outline-offset: 4px; }
 
 /* ---------- Motion: hover, press and enter animations ---------- */
 :root {
@@ -630,13 +629,13 @@ button.brand:active .brand-mark { transform: translateY(0) rotate(0) scale(.94);
 }
 
 /* Every clickable control eases between states */
-button, .search-box, .upload-zone, .collection-mix-option, .shared-archive-link, .text-input, .ingredient-input, .color-input-wrap {
+button, a.sort-button, a.account-button, a.nav-item, .brand, .breadcrumb-home, .search-box, .upload-zone, .collection-mix-option, .shared-archive-link, .text-input, .ingredient-input, .color-input-wrap {
   transition: color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease),
     box-shadow var(--t-med) var(--ease), transform var(--t-med) var(--ease), opacity var(--t-fast) var(--ease),
     text-decoration-color var(--t-fast) var(--ease);
 }
-button svg { transition: transform var(--t-med) var(--ease); }
-button:active:not(:disabled) { transform: translateY(0) scale(.97); transition-duration: .08s; }
+button svg, a.sort-button svg, a.nav-item svg { transition: transform var(--t-med) var(--ease); }
+button:active:not(:disabled), a.sort-button:active, a.account-button:active, a.nav-item:active { transform: translateY(0) scale(.97); transition-duration: .08s; }
 
 /* Primary buttons: lift with a green glow, the plus turns */
 .primary-button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: var(--green-shadow); }
@@ -859,3 +858,6 @@ button:active:not(:disabled) { transform: translateY(0) scale(.97); transition-d
 .share-notes .text-button { padding: 0; font-size: 12px; }
 .share-note-warn { color: var(--danger-text) !important; }
 .share-dialog .confirm-actions .confirm-primary { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+
+/* Dialogs take focus when they open; the box itself needs no focus ring, its controls have their own. */
+[role="dialog"]:focus { outline: none; }

@@ -3,3 +3,5 @@ dist
 .vite
 .netlify
 *.local
+playwright-report
+test-results
