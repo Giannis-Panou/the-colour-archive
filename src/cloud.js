@@ -158,6 +158,11 @@ export async function deleteMix(mix) {
 
 // values: { id?, name, mixIds }. `existing` is the collection being edited, or null for a new one.
 export async function saveCollection(values, existing) {
+  // Only well-formed ids may reach a query filter. supabase-js quotes list values but does not
+  // escape a `"` inside one, so a malformed id could otherwise widen the in() list below.
+  if (![existing?.id, ...values.mixIds, ...(existing?.mixIds || [])].filter(Boolean).every((id) => UUID.test(id))) {
+    throw new CloudError("The collection contains an invalid mix reference.");
+  }
   let collection;
   if (existing) {
     collection = check(await supabase.from("collections").update({ name: values.name }).eq("id", existing.id).select().single(), "The collection could not be saved.");
