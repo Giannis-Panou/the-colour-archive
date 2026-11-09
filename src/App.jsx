@@ -6,9 +6,12 @@ import {
   Check,
   ChevronDown,
   Download,
+  Eye,
+  EyeOff,
   Folder,
   FolderPlus,
   ImagePlus,
+  KeyRound,
   Layers3,
   LoaderCircle,
   LogIn,
@@ -203,7 +206,10 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [showSignIn, setShowSignIn] = useState(false);
   const [moveOffer, setMoveOffer] = useState(null);
+  const [showSetPassword, setShowSetPassword] = useState(false);
+  const [view, setView] = useState("archive"); // "archive" or "profile"
   const user = session?.user || null;
+  const displayName = user ? (user.user_metadata?.display_name?.trim() || user.email?.split("@")[0] || "You") : "";
   const userId = user?.id || null;
   const archiveLoading = (startsSignedIn && !authReady) || cloudStatus === "loading";
   const [query, setQuery] = useState("");
@@ -262,8 +268,11 @@ function App() {
       setAuthReady(true);
       cleanAddress();
     });
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession);
+      // Arriving from a "reset your password" email: ask for the new password straight away.
+      if (event === "PASSWORD_RECOVERY") setShowSetPassword(true);
+      if (!nextSession) setView("archive");
       cleanAddress();
     });
     return () => data.subscription.unsubscribe();
@@ -313,12 +322,13 @@ function App() {
   }, [authReady, userId, cloudReload]);
 
   useEffect(() => {
-    if (!showForm && !showCollectionForm && !collectionToDelete && !pendingImport && !showSignIn && !moveOffer) return;
+    if (!showForm && !showCollectionForm && !collectionToDelete && !pendingImport && !showSignIn && !moveOffer && !showSetPassword) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     function handleEscape(event) {
       if (event.key !== "Escape") return;
-      if (showSignIn) setShowSignIn(false);
+      if (showSetPassword) setShowSetPassword(false);
+      else if (showSignIn) setShowSignIn(false);
       else if (moveOffer) setMoveOffer(null);
       else if (pendingImport) setPendingImport(null);
       else if (collectionToDelete) setCollectionToDelete(null);
@@ -330,7 +340,7 @@ function App() {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", handleEscape);
     };
-  }, [showForm, showCollectionForm, collectionToDelete, pendingImport, showSignIn, moveOffer]);
+  }, [showForm, showCollectionForm, collectionToDelete, pendingImport, showSignIn, moveOffer, showSetPassword]);
 
   // One timer for all notices, so a new notice is never cleared by an older notice's timeout.
   function showNotice(message, duration = 3000) {
@@ -362,7 +372,23 @@ function App() {
       setStorageError("You couldn't be signed out. Check your connection and try again.");
       return;
     }
+    setView("archive");
     showNotice("Signed out. You're now seeing the archive saved in this browser.", 4000);
+  }
+
+  // Profile changes go to the Supabase user record; the returned user replaces the one in memory.
+  async function updateProfile(changes) {
+    const { data, error } = await supabase.auth.updateUser(changes);
+    if (error) throw error;
+    setSession((current) => (current ? { ...current, user: data.user } : current));
+    return data.user;
+  }
+
+  function openProfile() {
+    setView("profile");
+    setQuery("");
+    if (window.matchMedia("(max-width: 899px)").matches) setCollectionsExpanded(false);
+    window.scrollTo({ top: 0 });
   }
 
   async function moveLocalArchive() {
@@ -823,18 +849,21 @@ function App() {
   }
 
   function selectArchive() {
+    setView("archive");
     setSelectedCollectionId(null);
     setQuery("");
     if (window.matchMedia("(max-width: 899px)").matches) setCollectionsExpanded(false);
   }
 
   function selectCollection(id) {
+    setView("archive");
     setSelectedCollectionId(id);
     setQuery("");
     if (window.matchMedia("(max-width: 899px)").matches) setCollectionsExpanded(false);
   }
 
-  const pageTitle = selectedCollection?.name || "My archive";
+  const showingProfile = view === "profile" && Boolean(user);
+  const pageTitle = showingProfile ? "Profile" : selectedCollection?.name || "My archive";
 
   if (sharedLink) return <SharedPage payload={sharedLink} onSave={saveSharedLink} notice={notice} storageError={storageError} />;
 
@@ -902,7 +931,7 @@ function App() {
             {desktopSidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
           </button>
           <div className="breadcrumb">
-            {selectedCollection && (
+            {(selectedCollection || showingProfile) && (
               <>
                 <button className="breadcrumb-home" onClick={selectArchive}>My archive</button>
                 <span className="crumb-slash">/</span>
@@ -943,9 +972,15 @@ function App() {
                 <span className={`saved-status ${archiveLoading || busy ? "syncing" : "synced"}`} title={`Signed in as ${user.email}`}>
                   <span className="status-dot" /> {archiveLoading || busy ? "Syncing…" : "Synced to your account"}
                 </span>
-                <button className="account-button" onClick={signOut} title={`Signed in as ${user.email}. Sign out`} aria-label={`Sign out of ${user.email}`}>
-                  <span className="account-initial" aria-hidden="true">{(user.email || "?").charAt(0).toUpperCase()}</span>
-                  <LogOut size={15} /><span className="account-label">Sign out</span>
+                <button
+                  className={`account-button ${showingProfile ? "active" : ""}`}
+                  onClick={openProfile}
+                  title={`Signed in as ${user.email}. Open your profile`}
+                  aria-label={`Open profile for ${displayName}`}
+                  aria-current={showingProfile ? "page" : undefined}
+                >
+                  <span className="account-initial" aria-hidden="true">{displayName.charAt(0).toUpperCase()}</span>
+                  <span className="account-label">{displayName}</span>
                 </button>
               </>
             ) : (
@@ -964,6 +999,19 @@ function App() {
         </header>
 
         <section className="page-content">
+          {showingProfile ? (
+            <ProfilePage
+              user={user}
+              displayName={displayName}
+              mixes={mixes}
+              collections={collections}
+              onUpdateProfile={updateProfile}
+              onExport={exportBackup}
+              onSignOut={signOut}
+              onBack={selectArchive}
+            />
+          ) : (
+          <>
           <div className="page-heading">
             <div>
               <div className="eyebrow"><span className="eyebrow-line" /> YOUR PERSONAL PAINT LIBRARY</div>
@@ -1084,6 +1132,8 @@ function App() {
               </div>
             )}
           </section>
+          </>
+          )}
 
           <footer className="page-footer"><span>Made for the love of making.</span><span>THE COLOUR ARCHIVE <i>·</i> KEEP MIXING</span></footer>
         </section>
@@ -1135,6 +1185,16 @@ function App() {
         </div>
       )}
       {showSignIn && <SignInDialog onClose={() => setShowSignIn(false)} />}
+      {showSetPassword && (
+        <SetPasswordDialog
+          onClose={() => setShowSetPassword(false)}
+          onSave={async (password) => {
+            await updateProfile({ password });
+            setShowSetPassword(false);
+            showNotice("Your new password is saved. Use it next time you sign in.", 5000);
+          }}
+        />
+      )}
       {moveOffer && (
         <div className="modal-backdrop collection-delete-backdrop">
           <section className="collection-delete-dialog import-dialog" role="dialog" aria-modal="true" aria-labelledby="move-title" aria-describedby="move-description">
@@ -1156,59 +1216,198 @@ function App() {
   );
 }
 
-function SignInDialog({ onClose }) {
-  const [email, setEmail] = useState("");
-  const [status, setStatus] = useState("idle"); // idle | sending | sent
-  const [error, setError] = useState("");
+const MIN_PASSWORD_LENGTH = 8;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-  async function sendLink(event) {
+// Turns Supabase auth errors into plain advice.
+function authErrorMessage(error, fallback) {
+  const code = error?.code || "";
+  const message = error?.message || "";
+  if (error?.status === 429 || /rate limit/i.test(message) || code === "over_email_send_rate_limit") {
+    return "Too many emails were sent recently. Wait a few minutes, then try again.";
+  }
+  if (code === "invalid_credentials" || /invalid login credentials/i.test(message)) {
+    return "That email and password don't match. Try again, or choose “Forgot password?”.";
+  }
+  if (code === "email_not_confirmed" || /email not confirmed/i.test(message)) {
+    return "Confirm your email first: open the link we sent when you created your account.";
+  }
+  if (code === "weak_password" || /password should/i.test(message)) {
+    return `Choose a stronger password: at least ${MIN_PASSWORD_LENGTH} characters, mixing letters and numbers.`;
+  }
+  if (code === "same_password") return "That's already your password. Choose a different one.";
+  if (code === "reauthentication_needed" || /reauthenticat/i.test(message)) {
+    return "For security, sign out and sign in again before changing your password.";
+  }
+  if (error instanceof TypeError || /fetch|network/i.test(message)) {
+    return "Your account couldn't be reached. Check your internet connection and try again.";
+  }
+  return fallback;
+}
+
+function PasswordField({ id, label, value, onChange, autoComplete, autoFocus = false, hint = "" }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="field-label sign-in-field">
+      <label className="field-label-text" htmlFor={id}>{label}</label>
+      <span className="password-input">
+        <input
+          id={id}
+          className="text-input"
+          type={visible ? "text" : "password"}
+          autoComplete={autoComplete}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          autoFocus={autoFocus}
+          aria-describedby={hint ? `${id}-hint` : undefined}
+        />
+        <button
+          type="button"
+          className="password-toggle"
+          onClick={() => setVisible((shown) => !shown)}
+          aria-label={visible ? "Hide password" : "Show password"}
+          aria-pressed={visible}
+          title={visible ? "Hide password" : "Show password"}
+        >
+          {visible ? <EyeOff size={16} /> : <Eye size={16} />}
+        </button>
+      </span>
+      {hint && <span className="field-hint" id={`${id}-hint`}>{hint}</span>}
+    </div>
+  );
+}
+
+function SignInDialog({ onClose }) {
+  // method: "password" | "link". mode (password only): "signin" | "signup" | "forgot".
+  const [method, setMethod] = useState("password");
+  const [mode, setMode] = useState("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [status, setStatus] = useState("idle"); // idle | working | sent
+  const [sentKind, setSentKind] = useState(""); // link | confirm | reset
+  const [error, setError] = useState("");
+  const redirectTo = `${window.location.origin}${window.location.pathname}`;
+
+  function switchTo(nextMethod, nextMode = "signin") {
+    setMethod(nextMethod);
+    setMode(nextMode);
+    setError("");
+    setStatus("idle");
+  }
+
+  async function submit(event) {
     event.preventDefault();
     const address = email.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
+    if (!EMAIL_PATTERN.test(address)) {
       setError("Enter a full email address, like name@example.com.");
       return;
     }
-    setStatus("sending");
-    setError("");
-    const { error: sendError } = await supabase.auth.signInWithOtp({
-      email: address,
-      options: { emailRedirectTo: `${window.location.origin}${window.location.pathname}` },
-    });
-    if (sendError) {
-      console.error("Could not send the sign-in link:", sendError);
-      setStatus("idle");
-      setError(sendError.status === 429 || /rate limit/i.test(sendError.message)
-        ? "Too many sign-in emails were sent recently. Wait a few minutes, then try again."
-        : "The sign-in email couldn't be sent. Check the address and your connection, then try again.");
+    const needsPassword = method === "password" && mode !== "forgot";
+    if (needsPassword && !password) {
+      setError("Enter your password.");
       return;
     }
-    setStatus("sent");
+    if (method === "password" && mode === "signup" && password.length < MIN_PASSWORD_LENGTH) {
+      setError(`Use at least ${MIN_PASSWORD_LENGTH} characters for your password.`);
+      return;
+    }
+    setStatus("working");
+    setError("");
+
+    try {
+      if (method === "link") {
+        const { error: linkError } = await supabase.auth.signInWithOtp({ email: address, options: { emailRedirectTo: redirectTo } });
+        if (linkError) throw linkError;
+        setSentKind("link");
+        setStatus("sent");
+      } else if (mode === "signin") {
+        const { error: signInError } = await supabase.auth.signInWithPassword({ email: address, password });
+        if (signInError) throw signInError;
+        onClose();
+      } else if (mode === "signup") {
+        const { data, error: signUpError } = await supabase.auth.signUp({ email: address, password, options: { emailRedirectTo: redirectTo } });
+        if (signUpError) throw signUpError;
+        // Supabase hides whether an address is registered: an existing account comes back with no identities.
+        if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+          setStatus("idle");
+          setMode("signin");
+          setError("There's already an account for this email. Sign in instead, or choose “Forgot password?”.");
+          return;
+        }
+        if (data.session) {
+          onClose();
+          return;
+        }
+        setSentKind("confirm");
+        setStatus("sent");
+      } else {
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(address, { redirectTo });
+        if (resetError) throw resetError;
+        setSentKind("reset");
+        setStatus("sent");
+      }
+    } catch (authError) {
+      console.error("Sign-in step failed:", authError);
+      setStatus("idle");
+      setError(authErrorMessage(authError, "That didn't work. Check your details and connection, then try again."));
+    }
   }
+
+  const title = method === "link" ? "Sync your archive"
+    : mode === "signup" ? "Create your account"
+      : mode === "forgot" ? "Reset your password"
+        : "Sign in";
+  const intro = method === "link"
+    ? "We'll email you a link that signs you in. No password needed."
+    : mode === "signup" ? "Save your mixes to your account and use them on any device."
+      : mode === "forgot" ? "Enter your account email and we'll send you a link to choose a new password."
+        : "Sign in to keep your mixes in your account and use them on any device.";
+  const submitLabel = status === "working" ? "Please wait…"
+    : method === "link" ? "Email me a sign-in link"
+      : mode === "signup" ? "Create account"
+        : mode === "forgot" ? "Send reset link"
+          : "Sign in";
+  const sentCopy = {
+    link: ["Check your inbox", "We sent a sign-in link to"],
+    confirm: ["Confirm your email", "Your account is created. To finish, open the confirmation link we sent to"],
+    reset: ["Check your inbox", "If there's an account for this address, a password reset link is on its way to"],
+  }[sentKind];
 
   return (
     <div className="modal-backdrop collection-delete-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="collection-delete-dialog sign-in-dialog" role="dialog" aria-modal="true" aria-labelledby="sign-in-title" aria-describedby="sign-in-description">
         <button className="modal-close sign-in-close" onClick={onClose} aria-label="Close sign in"><X size={17} /></button>
-        <span className="confirm-icon import-icon"><Mail size={18} /></span>
+        <span className="confirm-icon import-icon">{method === "link" || status === "sent" ? <Mail size={18} /> : <KeyRound size={18} />}</span>
         {status === "sent" ? (
           <>
-            <h2 id="sign-in-title">Check your inbox</h2>
+            <h2 id="sign-in-title">{sentCopy[0]}</h2>
             <p id="sign-in-description">
-              We sent a sign-in link to <strong>{email.trim()}</strong>. Open it on this device, in this browser, to finish signing in.
+              {sentCopy[1]} <strong>{email.trim()}</strong>. Open it on this device, in this browser.
             </p>
             <p className="sign-in-hint">No email after a minute? Check your spam folder.</p>
             <div className="confirm-actions">
-              <button onClick={() => { setStatus("idle"); setError(""); }}>Use a different email</button>
+              <button onClick={() => switchTo(method, sentKind === "reset" ? "signin" : mode)}>Back</button>
               <button className="confirm-primary" onClick={onClose}>Done</button>
             </div>
           </>
         ) : (
-          <form onSubmit={sendLink} className="sign-in-form" noValidate>
-            <h2 id="sign-in-title">Sync your archive</h2>
-            <p id="sign-in-description">Sign in to keep your mixes in your account and use them on any device. No password needed: we’ll email you a link.</p>
-            <label className="field-label sign-in-field">
+          <form onSubmit={submit} className="sign-in-form" noValidate>
+            <h2 id="sign-in-title">{title}</h2>
+            <p id="sign-in-description">{intro}</p>
+            {mode !== "forgot" && (
+              <div className="segmented" role="tablist" aria-label="How to sign in">
+                <button type="button" role="tab" aria-selected={method === "password"} className={method === "password" ? "selected" : ""} onClick={() => switchTo("password", mode === "signup" ? "signup" : "signin")}>
+                  <KeyRound size={14} /> Password
+                </button>
+                <button type="button" role="tab" aria-selected={method === "link"} className={method === "link" ? "selected" : ""} onClick={() => switchTo("link")}>
+                  <Mail size={14} /> Email link
+                </button>
+              </div>
+            )}
+            <label className="field-label sign-in-field" htmlFor="sign-in-email">
               <span className="field-label-text">Email address</span>
               <input
+                id="sign-in-email"
                 className="text-input"
                 type="email"
                 autoComplete="email"
@@ -1219,16 +1418,232 @@ function SignInDialog({ onClose }) {
                 autoFocus
               />
             </label>
+            {method === "password" && mode !== "forgot" && (
+              <PasswordField
+                id="sign-in-password"
+                label="Password"
+                value={password}
+                onChange={setPassword}
+                autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                hint={mode === "signup" ? `At least ${MIN_PASSWORD_LENGTH} characters.` : ""}
+              />
+            )}
+            {method === "password" && mode === "signin" && (
+              <button type="button" className="text-button forgot-link" onClick={() => switchTo("password", "forgot")}>Forgot password?</button>
+            )}
             {error && <div className="form-error" role="alert">{error}</div>}
             <div className="confirm-actions">
-              <button type="button" onClick={onClose}>Cancel</button>
-              <button type="submit" className="confirm-primary" disabled={status === "sending"}>
-                {status === "sending" ? "Sending…" : "Email me a sign-in link"}
-              </button>
+              <button type="button" onClick={mode === "forgot" ? () => switchTo("password") : onClose}>{mode === "forgot" ? "Back" : "Cancel"}</button>
+              <button type="submit" className="confirm-primary" disabled={status === "working"}>{submitLabel}</button>
             </div>
+            {method === "password" && mode !== "forgot" && (
+              <p className="sign-in-switch">
+                {mode === "signup" ? "Already have an account?" : "New here?"}{" "}
+                <button type="button" className="text-button" onClick={() => switchTo("password", mode === "signup" ? "signin" : "signup")}>
+                  {mode === "signup" ? "Sign in" : "Create an account"}
+                </button>
+              </p>
+            )}
           </form>
         )}
       </section>
+    </div>
+  );
+}
+
+// Shown after opening a password reset email, and reused by the profile page.
+function SetPasswordDialog({ onClose, onSave }) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
+  const [working, setWorking] = useState(false);
+
+  async function submit(event) {
+    event.preventDefault();
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setError(`Use at least ${MIN_PASSWORD_LENGTH} characters for your password.`);
+      return;
+    }
+    if (password !== confirm) {
+      setError("The two passwords don't match.");
+      return;
+    }
+    setWorking(true);
+    setError("");
+    try {
+      await onSave(password);
+    } catch (saveError) {
+      console.error("Could not set the password:", saveError);
+      setError(authErrorMessage(saveError, "Your password couldn't be saved. Try again in a moment."));
+      setWorking(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop collection-delete-backdrop">
+      <section className="collection-delete-dialog sign-in-dialog" role="dialog" aria-modal="true" aria-labelledby="set-password-title">
+        <button className="modal-close sign-in-close" onClick={onClose} aria-label="Close"><X size={17} /></button>
+        <span className="confirm-icon import-icon"><KeyRound size={18} /></span>
+        <form onSubmit={submit} className="sign-in-form" noValidate>
+          <h2 id="set-password-title">Choose a new password</h2>
+          <p>You're signed in. Pick a password to use next time.</p>
+          <PasswordField id="new-password" label="New password" value={password} onChange={setPassword} autoComplete="new-password" autoFocus hint={`At least ${MIN_PASSWORD_LENGTH} characters.`} />
+          <PasswordField id="confirm-password" label="Type it again" value={confirm} onChange={setConfirm} autoComplete="new-password" />
+          {error && <div className="form-error" role="alert">{error}</div>}
+          <div className="confirm-actions">
+            <button type="button" onClick={onClose} disabled={working}>Not now</button>
+            <button type="submit" className="confirm-primary" disabled={working}>{working ? "Saving…" : "Save password"}</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function ProfilePage({ user, displayName, mixes, collections, onUpdateProfile, onExport, onSignOut, onBack }) {
+  const savedName = user.user_metadata?.display_name || "";
+  const [name, setName] = useState(savedName);
+  const [nameStatus, setNameStatus] = useState({ state: "idle", message: "" });
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [passwordStatus, setPasswordStatus] = useState({ state: "idle", message: "" });
+
+  const joined = new Intl.DateTimeFormat("en", { day: "numeric", month: "long", year: "numeric" }).format(new Date(user.created_at));
+  const lastSignIn = user.last_sign_in_at
+    ? new Intl.DateTimeFormat("en", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(user.last_sign_in_at))
+    : "—";
+  const brandCounts = mixes.flatMap((mix) => mix.paints.map((paint) => paint.brand)).reduce((counts, brand) => counts.set(brand, (counts.get(brand) || 0) + 1), new Map());
+  const favouriteBrand = [...brandCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "—";
+  const stats = [
+    ["Mixes", mixes.length],
+    ["Collections", collections.length],
+    ["Photos", mixes.filter((mix) => mix.image).length],
+    ["Unique paints", new Set(mixes.flatMap((mix) => mix.paints.map((paint) => `${paint.brand}:${paint.name}`))).size],
+  ];
+  const recentColours = mixes.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 8);
+
+  async function saveName(event) {
+    event.preventDefault();
+    const clean = name.trim();
+    if (clean.length > 40) {
+      setNameStatus({ state: "error", message: "Keep your name to 40 characters or fewer." });
+      return;
+    }
+    setNameStatus({ state: "working", message: "" });
+    try {
+      await onUpdateProfile({ data: { display_name: clean } });
+      setName(clean);
+      setNameStatus({ state: "done", message: clean ? "Name saved." : "Name cleared. Your email name is shown instead." });
+    } catch (error) {
+      console.error("Could not save the display name:", error);
+      setNameStatus({ state: "error", message: authErrorMessage(error, "Your name couldn't be saved. Try again in a moment.") });
+    }
+  }
+
+  async function savePassword(event) {
+    event.preventDefault();
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setPasswordStatus({ state: "error", message: `Use at least ${MIN_PASSWORD_LENGTH} characters for your password.` });
+      return;
+    }
+    if (password !== confirm) {
+      setPasswordStatus({ state: "error", message: "The two passwords don't match." });
+      return;
+    }
+    setPasswordStatus({ state: "working", message: "" });
+    try {
+      await onUpdateProfile({ password });
+      setPassword("");
+      setConfirm("");
+      setPasswordStatus({ state: "done", message: "Password saved. You can now sign in with your email and this password." });
+    } catch (error) {
+      console.error("Could not change the password:", error);
+      setPasswordStatus({ state: "error", message: authErrorMessage(error, "Your password couldn't be saved. Try again in a moment.") });
+    }
+  }
+
+  const statusLine = (status) => status.message && (
+    <div className={status.state === "error" ? "form-error" : "form-success"} role={status.state === "error" ? "alert" : "status"}>{status.message}</div>
+  );
+
+  return (
+    <div className="profile-page">
+      <div className="page-heading">
+        <div>
+          <div className="eyebrow"><span className="eyebrow-line" /> YOUR ACCOUNT</div>
+          <h1>{displayName}{!/[.!?]$/.test(displayName) && <span className="heading-period">.</span>}</h1>
+          <p className="heading-subtitle">Member since {joined}. Your archive is synced to this account.</p>
+        </div>
+        <button className="sort-button" onClick={onBack}><Archive size={15} /> Back to my archive</button>
+      </div>
+
+      <section className="summary-row profile-stats" aria-label="Archive statistics">
+        {stats.map(([label, value]) => (
+          <div className="summary-card" key={label}>
+            <span className="summary-copy"><span className="summary-label">{label.toUpperCase()}</span><strong>{value}</strong></span>
+          </div>
+        ))}
+      </section>
+
+      <div className="profile-grid">
+        <section className="profile-card" aria-labelledby="profile-details-title">
+          <h2 id="profile-details-title">Details</h2>
+          <form onSubmit={saveName} className="profile-form">
+            <label className="field-label" htmlFor="profile-name">
+              <span className="field-label-text">Display name <span className="optional-label">OPTIONAL</span></span>
+              <input id="profile-name" className="text-input" value={name} maxLength={40} onChange={(event) => { setName(event.target.value); setNameStatus({ state: "idle", message: "" }); }} placeholder={user.email?.split("@")[0]} autoComplete="nickname" />
+            </label>
+            {statusLine(nameStatus)}
+            <button className="primary-button" type="submit" disabled={nameStatus.state === "working" || name.trim() === savedName}>
+              {nameStatus.state === "working" ? "Saving…" : "Save name"}
+            </button>
+          </form>
+          <dl className="profile-facts">
+            <div><dt>Email</dt><dd>{user.email}</dd></div>
+            <div><dt>Member since</dt><dd>{joined}</dd></div>
+            <div><dt>Last sign-in</dt><dd>{lastSignIn}</dd></div>
+            <div><dt>Favourite brand</dt><dd>{favouriteBrand}</dd></div>
+          </dl>
+        </section>
+
+        <section className="profile-card" aria-labelledby="profile-password-title">
+          <h2 id="profile-password-title">Password</h2>
+          <p className="profile-help">Set a password to sign in without waiting for an email, or change the one you have. Email links keep working either way.</p>
+          <form onSubmit={savePassword} className="profile-form">
+            <PasswordField id="profile-new-password" label="New password" value={password} onChange={(value) => { setPassword(value); setPasswordStatus({ state: "idle", message: "" }); }} autoComplete="new-password" hint={`At least ${MIN_PASSWORD_LENGTH} characters.`} />
+            <PasswordField id="profile-confirm-password" label="Type it again" value={confirm} onChange={(value) => { setConfirm(value); setPasswordStatus({ state: "idle", message: "" }); }} autoComplete="new-password" />
+            {statusLine(passwordStatus)}
+            <button className="primary-button" type="submit" disabled={passwordStatus.state === "working" || !password}>
+              {passwordStatus.state === "working" ? "Saving…" : "Save password"}
+            </button>
+          </form>
+        </section>
+
+        <section className="profile-card" aria-labelledby="profile-palette-title">
+          <h2 id="profile-palette-title">Latest colours</h2>
+          {recentColours.length ? (
+            <ul className="profile-palette">
+              {recentColours.map((mix) => (
+                <li key={mix.id} title={`${mix.name} · ${mix.color.toUpperCase()}`}>
+                  <span style={{ backgroundColor: mix.color }} />
+                  <small>{mix.name}</small>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="profile-help">Your newest mixes will show here once you save some.</p>
+          )}
+        </section>
+
+        <section className="profile-card" aria-labelledby="profile-actions-title">
+          <h2 id="profile-actions-title">Your data</h2>
+          <p className="profile-help">Download everything in your account, photos included, as a backup file you can import anywhere.</p>
+          <div className="profile-actions">
+            <button className="sort-button" onClick={onExport} disabled={!mixes.length && !collections.length}><Download size={15} /> Export backup</button>
+            <button className="sort-button sign-out-button" onClick={onSignOut}><LogOut size={15} /> Sign out</button>
+          </div>
+        </section>
+      </div>
     </div>
   );
 }
