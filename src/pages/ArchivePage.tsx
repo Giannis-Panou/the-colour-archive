@@ -1,10 +1,13 @@
-import { Archive, Beaker, Check, ChevronDown, Folder, LoaderCircle, Pipette, Plus, Search, Share2, Star, X } from "lucide-react";
+import { Archive, Beaker, Check, ChevronDown, Folder, ListChecks, LoaderCircle, Pipette, Plus, Search, Share2, Star, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { Collection, Mix } from "../types";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { MixCard } from "../components/mixes/MixCard";
+import { SelectionBar } from "../components/SelectionBar";
+import { useSelection } from "../hooks/useSelection";
 import { COLOR_FAMILIES, colorFamily, hueSortKey, type ColorFamily } from "../lib/color";
 import type { PaintShelf } from "../lib/paints";
-import { paintKey } from "../lib/validation";
+import { paintKey, plural } from "../lib/validation";
 
 type SortOrder = "newest" | "oldest" | "name" | "hue";
 const SORTS: { id: SortOrder; label: string }[] = [
@@ -37,6 +40,9 @@ interface ArchivePageProps {
   onEditMix: (mix: Mix) => void;
   onViewMix: (mix: Mix) => void;
   onDeleteMix: (mix: Mix) => void;
+  /** Deletes several mixes; resolves true when they were deleted. */
+  onDeleteMixes: (mixes: Mix[]) => Promise<boolean>;
+  busy: boolean;
   onShareMix: (mix: Mix) => void;
   onToggleFavorite: (mix: Mix) => void;
   onMatchColor: () => void;
@@ -47,7 +53,7 @@ interface ArchivePageProps {
 /** "My archive" and a single collection: heading, summary, filters, sort and the mix grid. */
 export function ArchivePage({
   mixes, collection, shelf, loading, loadFailed, errors, notice,
-  onRetry, onNewMix, onEditMix, onViewMix, onDeleteMix, onShareMix, onToggleFavorite, onMatchColor, onShareCollection, onManageCollection,
+  busy, onRetry, onNewMix, onEditMix, onViewMix, onDeleteMix, onDeleteMixes, onShareMix, onToggleFavorite, onMatchColor, onShareCollection, onManageCollection,
 }: ArchivePageProps) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortOrder>("newest");
@@ -85,6 +91,19 @@ export function ArchivePage({
       // Favourites always lead; the chosen order applies within each group.
       .sort((a, b) => Number(Boolean(b.favorite)) - Number(Boolean(a.favorite)) || COMPARE[sort](a, b));
   }, [collectionMixes, query, family, paintFilter, favoritesOnly, sort]);
+
+  // Select mode works on what's on screen: a mix hidden by a filter is never deleted unseen.
+  const visibleIds = useMemo(() => visibleMixes.map((mix) => mix.id), [visibleMixes]);
+  const selection = useSelection(visibleIds);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const selectedMixes = visibleMixes.filter((mix) => selection.selected.includes(mix.id));
+
+  async function deleteSelected() {
+    if (await onDeleteMixes(selectedMixes)) {
+      setConfirmingDelete(false);
+      selection.stop();
+    }
+  }
 
   function clearFilters() {
     setQuery("");
@@ -145,6 +164,7 @@ export function ArchivePage({
               </>
             )}
             {mixes.length > 0 && <button className="sort-button" onClick={onMatchColor}><Pipette size={15} /> Match a colour</button>}
+            {collectionMixes.length > 0 && !selection.active && <button className="sort-button" onClick={selection.start}><ListChecks size={15} /> Select</button>}
           </div>
         </div>
 
@@ -215,7 +235,17 @@ export function ArchivePage({
         ) : visibleMixes.length > 0 ? (
           <div className="mix-grid">
             {visibleMixes.map((mix) => (
-              <MixCard key={mix.id} mix={mix} shelf={shelf} onShare={onShareMix} onEdit={onEditMix} onDelete={onDeleteMix} onToggleFavorite={onToggleFavorite} onView={onViewMix} />
+              <MixCard
+                key={mix.id}
+                mix={mix}
+                shelf={shelf}
+                onShare={onShareMix}
+                onEdit={onEditMix}
+                onDelete={onDeleteMix}
+                onToggleFavorite={onToggleFavorite}
+                onView={onViewMix}
+                selection={selection.active ? { selected: selection.isSelected(mix.id), onToggle: () => selection.toggle(mix.id) } : undefined}
+              />
             ))}
           </div>
         ) : collection && !filtersActive ? (
@@ -248,6 +278,41 @@ export function ArchivePage({
           </div>
         )}
       </section>
+
+      {selection.active && (
+        <SelectionBar
+          count={selection.selected.length}
+          noun={["mix", "mixes"]}
+          total={visibleMixes.length}
+          busy={busy}
+          onSelectAll={() => selection.selectAll(visibleIds)}
+          onClearAll={() => selection.selectAll([])}
+          onDelete={() => setConfirmingDelete(true)}
+          onCancel={selection.stop}
+        />
+      )}
+      {confirmingDelete && (
+        <ConfirmDialog
+          id="delete-mixes"
+          icon={<Trash2 size={18} />}
+          title={`Delete ${plural(selectedMixes.length, "mix", "mixes")}?`}
+          description={(
+            <>
+              {selectedMixes.length <= 3
+                ? <><strong>{selectedMixes.map((mix) => mix.name).join(", ")}</strong> will be deleted from your archive</>
+                : <><strong>{selectedMixes.slice(0, 3).map((mix) => mix.name).join(", ")}</strong> and {plural(selectedMixes.length - 3, "other")} will be deleted from your archive</>}
+              {collection ? ", not only from this collection" : ""}. This can’t be undone.
+            </>
+          )}
+          onClose={() => setConfirmingDelete(false)}
+          actions={(
+            <>
+              <button autoFocus onClick={() => setConfirmingDelete(false)} disabled={busy}>Cancel</button>
+              <button className="confirm-delete" onClick={deleteSelected} disabled={busy}>{busy ? "Deleting…" : `Delete ${plural(selectedMixes.length, "mix", "mixes")}`}</button>
+            </>
+          )}
+        />
+      )}
     </>
   );
 }

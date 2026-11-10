@@ -331,7 +331,7 @@ body { background-color: var(--bg); color: var(--ink); }
 }
 
 /* ---------- My paints and the shopping list ---------- */
-.page-tabs { display: flex; gap: 4px; margin: -8px 0 22px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.page-tabs { display: flex; gap: 4px; margin: -8px 0 22px; border-bottom: 1px solid var(--line); }
 .page-tab {
   flex: none; margin-bottom: -1px; padding: 11px 12px; display: inline-flex; align-items: center; gap: 7px;
   border-bottom: 2px solid transparent; color: var(--muted); font-size: 12px; font-weight: 600;
@@ -340,7 +340,9 @@ body { background-color: var(--bg); color: var(--ink); }
 .page-tab:hover { color: var(--ink-2); }
 .page-tab.active { border-bottom-color: var(--green); color: var(--green); }
 .page-tab.active .filter-count { background: var(--green-light); color: var(--green); }
-.paint-groups { display: grid; gap: 22px; }
+.paint-groups { display: grid; gap: var(--group-gap); }
+/* The paints from your mixes are one more group, so the same space sits above them. */
+.unlisted-section { margin-top: var(--group-gap); min-height: 0; }
 .paint-group h3 { margin: 0 0 9px; display: flex; align-items: center; gap: 4px; color: var(--ink); font: 600 16px var(--display); letter-spacing: .3px; text-transform: uppercase; }
 .paint-rows { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .paint-row {
@@ -471,7 +473,7 @@ body { background-color: var(--bg); color: var(--ink); }
      mix photo (star, share, edit, delete) are --icon-h, so four fit over the photo without hiding it.
    - Small labels (counts, NOT OWNED, MIX, shopping reasons) are rectangles with 4px corners.
    ===================================================================================== */
-:root { --control-h: 44px; --icon-h: 36px; --radius: 6px; }
+:root { --control-h: 44px; --icon-h: 36px; --radius: 6px; --group-gap: 22px; }
 @media (min-width: 600px) { :root { --control-h: 38px; --icon-h: 30px; } }
 
 /* Buttons with text */
@@ -527,3 +529,31 @@ textarea.text-input { height: auto; min-height: 76px; }
 .palette-strip button:hover { flex-grow: 1.8; }
 .palette-strip button:focus-visible { outline: 2px solid var(--card); outline-offset: -4px; box-shadow: inset 0 0 0 4px var(--green); }
 .palette-empty { color: var(--muted); font-size: 12px; }
+
+/* ---------- Select mode ---------- */
+/* The bar sticks to the bottom of the screen inside the page column, above the phone tabs. */
+.selection-bar {
+  position: sticky; bottom: calc(62px + env(safe-area-inset-bottom) + 10px); z-index: 3;
+  margin-top: 18px; padding: 8px 8px 8px 16px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
+  border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--card);
+  box-shadow: 0 14px 34px -14px rgba(25,34,29,.35); animation: slide-down var(--t-med) var(--ease);
+}
+.selection-count { color: var(--muted); font-size: 12px; }
+.selection-count strong { color: var(--ink); font: 600 16px var(--display); }
+.selection-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.selection-actions .sort-button.danger:not(:disabled) { border-color: var(--danger); color: var(--danger-text); }
+@media (min-width: 600px) { .selection-bar { bottom: 16px; } }
+
+/* Mix cards: a checkbox in the corner, a clear outline when picked. */
+.card-select { position: absolute; top: 9px; left: 9px; z-index: 2; width: var(--icon-h); height: var(--icon-h); display: grid; place-items: center; border-radius: var(--radius); background: var(--overlay); cursor: pointer; }
+.card-select input, .row-select input { width: 18px; height: 18px; margin: 0; accent-color: var(--green); cursor: pointer; }
+.mix-card.selecting .image-color-toggle { display: none; }
+.mix-card.selected { border-color: var(--green); box-shadow: 0 0 0 2px var(--green); }
+.mix-card.selected .mix-card-body { background: var(--green-light); }
+
+/* Paint rows: a checkbox first, the status as text instead of the dropdown. */
+.row-select { flex: none; width: var(--control-h); height: var(--control-h); margin: -4px 0; display: grid; place-items: center; cursor: pointer; }
+.paint-row.selecting { cursor: pointer; flex-wrap: nowrap; }
+.paint-row.selecting .paint-row-copy { flex: 1 1 auto; }
+.paint-row.selected { border-color: var(--green); background: var(--green-light); }
+.row-status { flex: none; color: var(--muted); font: 10px var(--mono); letter-spacing: .4px; text-transform: uppercase; }

@@ -124,6 +124,24 @@ export function useArchive({ user, authReady, startsSignedIn }: Options) {
     return Boolean(done);
   }, [run, store, update]);
 
+  const deleteMixes = useCallback(async (selected: Mix[]) => {
+    const ids = new Set(selected.map((mix) => mix.id));
+    const done = await run(async () => { await store.deleteMixes(selected); return true; }, "These mixes couldn't be deleted. Try again in a moment.");
+    if (done) update((previous) => ({
+      ...previous,
+      mixes: previous.mixes.filter((item) => !ids.has(item.id)),
+      collections: previous.collections.map((collection) => ({ ...collection, mixIds: collection.mixIds.filter((id) => !ids.has(id)) })),
+    }));
+    return Boolean(done);
+  }, [run, store, update]);
+
+  const deletePaints = useCallback(async (paintIds: string[]) => {
+    const ids = new Set(paintIds);
+    const done = await run(async () => { await store.deletePaints(paintIds); return true; }, "These paints couldn't be removed. Try again in a moment.");
+    if (done) update((previous) => ({ ...previous, paints: previous.paints.filter((paint) => !ids.has(paint.id)) }));
+    return Boolean(done);
+  }, [run, store, update]);
+
   const saveCollection = useCallback(async (values: CollectionInput, existing: Collection | null) => {
     const saved = await run(() => store.saveCollection(values, existing), "This collection couldn't be saved to your account. Try again in a moment.");
     if (saved) update((previous) => ({ ...previous, collections: place(previous.collections, saved, "end") }));
@@ -181,6 +199,7 @@ export function useArchive({ user, authReady, startsSignedIn }: Options) {
     saveMix,
     setFavorite,
     deleteMix,
+    deleteMixes,
     saveCollection,
     deleteCollection,
     saveRecipe,
@@ -191,6 +210,7 @@ export function useArchive({ user, authReady, startsSignedIn }: Options) {
     removeProjectPhoto,
     savePaint,
     deletePaint,
+    deletePaints,
     importArchive,
     exportableArchive,
   };

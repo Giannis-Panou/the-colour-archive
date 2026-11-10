@@ -27,6 +27,19 @@ describe("localStore", () => {
     expect(stored().collections[0]).toMatchObject({ id: collection.id, mixIds: [] });
   });
 
+  it("deletes several mixes and paints at once, leaving the rest", async () => {
+    const [a, b, c] = [await localStore.saveMix(recipe, null), await localStore.saveMix({ ...recipe, name: "B" }, null), await localStore.saveMix({ ...recipe, name: "C" }, null)];
+    await localStore.saveCollection({ name: "Bases", mixIds: [a.id, b.id, c.id] }, null);
+    await localStore.deleteMixes([a, c]);
+    expect(stored().mixes.map((mix: { id: string }) => mix.id)).toEqual([b.id]);
+    expect(stored().collections[0].mixIds).toEqual([b.id]);
+
+    const paints = [];
+    for (const name of ["One", "Two", "Three"]) paints.push(await localStore.savePaint({ name, brand: "Citadel", swatch: "#112233", status: "have" }, null));
+    await localStore.deletePaints([paints[0].id, paints[2].id]);
+    expect(read(PAINTS_KEY).map((paint: { name: string }) => paint.name)).toEqual(["Two"]);
+  });
+
   it("stars a mix, and editing it keeps the star", async () => {
     const created = await localStore.saveMix(recipe, null);
     const starred = await localStore.setFavorite(created, true);

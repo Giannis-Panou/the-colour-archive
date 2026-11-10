@@ -1,13 +1,15 @@
-import { Check, ChevronDown, ClipboardCopy, LoaderCircle, PaintBucket, Pencil, Plus, Search, ShoppingCart, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, ClipboardCopy, ListChecks, LoaderCircle, PaintBucket, Pencil, Plus, Search, ShoppingCart, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { NavLink } from "react-router";
 import type { OwnedPaint, PaintInput, PaintStatus } from "../types";
 import type { ArchiveApi } from "../hooks/useArchive";
+import { useSelection } from "../hooks/useSelection";
 import { paintsInUse, PaintShelf, shoppingList, shoppingListText, STATUS_LABELS, type PaintUse } from "../lib/paints";
 import { plural } from "../lib/validation";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { PageBanners, PageHeading } from "../components/PageHeading";
 import { PaintForm } from "../components/paints/PaintForm";
+import { SelectionBar } from "../components/SelectionBar";
 
 interface PaintsPageProps {
   tab: "shelf" | "shopping";
@@ -17,7 +19,7 @@ interface PaintsPageProps {
   showNotice: (message: string, duration?: number) => void;
 }
 
-type Dialog = null | { type: "form"; paint: OwnedPaint | null; initial?: Partial<PaintInput> } | { type: "delete"; paint: OwnedPaint };
+type Dialog = null | { type: "form"; paint: OwnedPaint | null; initial?: Partial<PaintInput> } | { type: "delete"; paint: OwnedPaint } | { type: "deleteMany" };
 
 const usageText = (use: PaintUse | undefined) => {
   if (!use) return "Not used yet";
@@ -49,6 +51,20 @@ export function PaintsPage({ tab, archive, errors, notice, showNotice }: PaintsP
     }
     return [...groups].sort((a, b) => a[0].localeCompare(b[0]));
   }, [paints, query, statusFilter]);
+
+  // Select mode covers the paints on screen; one hidden by the search or a filter is never removed unseen.
+  const visiblePaints = useMemo(() => grouped.flatMap(([, list]) => list), [grouped]);
+  const visibleIds = useMemo(() => visiblePaints.map((paint) => paint.id), [visiblePaints]);
+  const selection = useSelection(tab === "shelf" ? visibleIds : []);
+  const selectedPaints = visiblePaints.filter((paint) => selection.selected.includes(paint.id));
+
+  async function removeSelected() {
+    if (await archive.deletePaints(selectedPaints.map((paint) => paint.id))) {
+      showNotice(`${plural(selectedPaints.length, "paint")} removed from My paints.`);
+      setDialog(null);
+      selection.stop();
+    }
+  }
 
   function openForm(paint: OwnedPaint | null, initial?: Partial<PaintInput>) {
     archive.setError("");
@@ -131,6 +147,7 @@ export function PaintsPage({ tab, archive, errors, notice, showNotice }: PaintsP
                     <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search paints..." aria-label="Search paints" />
                     {query && <button className="clear-search" onClick={() => setQuery("")} aria-label="Clear search"><X size={14} /></button>}
                   </label>
+                  {visiblePaints.length > 0 && !selection.active && <button className="sort-button" onClick={selection.start}><ListChecks size={15} /> Select</button>}
                 </div>
                 <div className="family-chips" role="group" aria-label="Filter by status">
                   <button className={`family-chip ${statusFilter ? "" : "on"}`} aria-pressed={!statusFilter} onClick={() => setStatusFilter(null)}>All</button>
@@ -150,20 +167,34 @@ export function PaintsPage({ tab, archive, errors, notice, showNotice }: PaintsP
                     <h3>{brand} <span className="mix-total">{list.length}</span></h3>
                     <ul className="paint-rows">
                       {list.map((paint) => (
-                        <li className={`paint-row status-${paint.status}`} key={paint.id}>
+                        <li
+                          className={`paint-row status-${paint.status} ${selection.active ? "selecting" : ""} ${selection.isSelected(paint.id) ? "selected" : ""}`}
+                          key={paint.id}
+                          // In select mode the whole row picks the paint, except its own controls.
+                          onClick={selection.active ? (event) => { if (!(event.target as HTMLElement).closest("input, select, label, button")) selection.toggle(paint.id); } : undefined}
+                        >
+                          {selection.active && (
+                            <label className="row-select">
+                              <input type="checkbox" checked={selection.isSelected(paint.id)} onChange={() => selection.toggle(paint.id)} aria-label={`Select ${paint.name}`} />
+                            </label>
+                          )}
                           <span className="paint-swatch" style={{ backgroundColor: paint.swatch }} aria-hidden="true" />
                           <span className="paint-row-copy"><strong>{paint.name}</strong><small>{usageText(usageOf(paint))}</small></span>
-                          <label className="select-control status-select">
+                          {!selection.active && <label className="select-control status-select">
                             <span className="sr-only">Status of {paint.name}</span>
                             <select value={paint.status} onChange={(event) => setStatus(paint, event.target.value as PaintStatus)} disabled={busy}>
                               {(Object.keys(STATUS_LABELS) as PaintStatus[]).map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}
                             </select>
                             <ChevronDown size={14} aria-hidden="true" />
-                          </label>
-                          <span className="paint-row-actions">
-                            <button className="edit-button" onClick={() => openForm(paint)} aria-label={`Edit ${paint.name}`} title={`Edit ${paint.name}`}><Pencil size={14} /></button>
-                            <button className="delete-button" onClick={() => setDialog({ type: "delete", paint })} aria-label={`Remove ${paint.name}`} title={`Remove ${paint.name}`}><Trash2 size={14} /></button>
-                          </span>
+                          </label>}
+                          {selection.active
+                            ? <span className="row-status">{STATUS_LABELS[paint.status]}</span>
+                            : (
+                              <span className="paint-row-actions">
+                                <button className="edit-button" onClick={() => openForm(paint)} aria-label={`Edit ${paint.name}`} title={`Edit ${paint.name}`}><Pencil size={14} /></button>
+                                <button className="delete-button" onClick={() => setDialog({ type: "delete", paint })} aria-label={`Remove ${paint.name}`} title={`Remove ${paint.name}`}><Trash2 size={14} /></button>
+                              </span>
+                            )}
                         </li>
                       ))}
                     </ul>
@@ -188,7 +219,7 @@ export function PaintsPage({ tab, archive, errors, notice, showNotice }: PaintsP
           </section>
 
           {unlisted.length > 0 && (
-            <section className="collection-section">
+            <section className="collection-section unlisted-section">
               <div className="section-title-row">
                 <div>
                   <h2>In your mixes, not on your list <span className="mix-total">{unlisted.length}</span></h2>
@@ -276,6 +307,40 @@ export function PaintsPage({ tab, archive, errors, notice, showNotice }: PaintsP
             <>
               <button autoFocus onClick={() => setDialog(null)} disabled={busy}>Cancel</button>
               <button className="confirm-delete" onClick={remove} disabled={busy}>{busy ? "Removing…" : "Remove paint"}</button>
+            </>
+          )}
+        />
+      )}
+      {tab === "shelf" && selection.active && (
+        <SelectionBar
+          count={selectedPaints.length}
+          noun={["paint", "paints"]}
+          total={visiblePaints.length}
+          busy={busy}
+          onSelectAll={() => selection.selectAll(visibleIds)}
+          onClearAll={() => selection.selectAll([])}
+          onDelete={() => setDialog({ type: "deleteMany" })}
+          onCancel={selection.stop}
+        />
+      )}
+      {dialog?.type === "deleteMany" && (
+        <ConfirmDialog
+          id="delete-paints"
+          icon={<Trash2 size={18} />}
+          title={`Remove ${plural(selectedPaints.length, "paint")}?`}
+          description={(
+            <>
+              {selectedPaints.length <= 3
+                ? <strong>{selectedPaints.map((paint) => paint.name).join(", ")}</strong>
+                : <><strong>{selectedPaints.slice(0, 3).map((paint) => paint.name).join(", ")}</strong> and {plural(selectedPaints.length - 3, "other")}</>}
+              {" "}will be taken off My paints. Mixes that use them keep them.
+            </>
+          )}
+          onClose={() => setDialog(null)}
+          actions={(
+            <>
+              <button autoFocus onClick={() => setDialog(null)} disabled={busy}>Cancel</button>
+              <button className="confirm-delete" onClick={removeSelected} disabled={busy}>{busy ? "Removing…" : `Remove ${plural(selectedPaints.length, "paint")}`}</button>
             </>
           )}
         />

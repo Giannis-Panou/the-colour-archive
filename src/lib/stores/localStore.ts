@@ -136,6 +136,15 @@ export const localStore: ArchiveStore = {
     return saved;
   },
 
+  async deleteMixes(selected) {
+    const ids = new Set(selected.map((mix) => mix.id));
+    const { archive } = readLocalArchive();
+    writeLists({
+      mixes: archive.mixes.filter((item) => !ids.has(item.id)),
+      collections: archive.collections.map((collection) => ({ ...collection, mixIds: collection.mixIds.filter((id) => !ids.has(id)) })),
+    }, `These mixes could not be removed. ${FULL}`);
+  },
+
   async deleteMix(mix) {
     const { archive } = readLocalArchive();
     writeLists({
@@ -209,6 +218,12 @@ export const localStore: ArchiveStore = {
   async deletePaint(id) {
     const { items: paints } = readPaints();
     writeLists({ paints: paints.filter((paint) => paint.id !== id) }, `This paint could not be removed. ${FULL}`);
+  },
+
+  async deletePaints(ids) {
+    const remove = new Set(ids);
+    const { items: paints } = readPaints();
+    writeLists({ paints: paints.filter((paint) => !remove.has(paint.id)) }, `These paints could not be removed. ${FULL}`);
   },
 
   async importArchive(incoming, { mode, label, failureMessage }) {

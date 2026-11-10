@@ -374,6 +374,71 @@ test("deleting a mix used by a recipe leaves a marked gap", async () => {
   await expect(page.locator(".recipe-step").nth(2)).toContainText("A mix that was deleted");
 });
 
+// ---------- Select mode ----------
+
+test("several mixes can be selected and deleted together, after one confirmation", async () => {
+  await page.getByRole("link", { name: "Mixes" }).click();
+  // Counted from storage, not the screen, so the count can't be taken before the cards appear.
+  const before = await page.evaluate(() => JSON.parse(localStorage.getItem("the-colour-archive-mixes") || "[]").length as number);
+  await expect(titles()).toHaveCount(before);
+  await page.getByRole("button", { name: "Select", exact: true }).click();
+  // In select mode, a click on the card picks it instead of opening its details.
+  await card("Old parchment").locator(".paint-line").first().click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("checkbox", { name: "Select Dead grass tufts" }).check();
+  const bar = page.getByRole("region", { name: "Selection" });
+  await expect(bar).toContainText("2 mixes selected");
+  // The card's own buttons are hidden while selecting.
+  await expect(page.getByRole("button", { name: "Delete Old parchment" })).toHaveCount(0);
+
+  await bar.getByRole("button", { name: "Delete" }).click();
+  const confirm = page.getByRole("dialog", { name: "Delete 2 mixes?" });
+  await expect(confirm).toContainText("Old parchment");
+  await confirm.getByRole("button", { name: "Delete 2 mixes" }).click();
+  await expect(page.getByText("2 mixes removed from your archive.")).toBeVisible();
+  await expect(titles()).toHaveCount(before - 2);
+  await expect(bar).toHaveCount(0);
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("the-colour-archive-mixes") || "[]").map((mix: { name: string }) => mix.name));
+  expect(saved).not.toContain("Old parchment");
+  expect(saved).not.toContain("Dead grass tufts");
+});
+
+test("Select all only picks what the filters show, and Escape leaves select mode", async () => {
+  await page.getByRole("group", { name: "Filter by colour family" }).getByRole("button", { name: /Blues/ }).click();
+  const shown = await titles().count();
+  await page.getByRole("button", { name: "Select", exact: true }).click();
+  const bar = page.getByRole("region", { name: "Selection" });
+  await bar.getByRole("button", { name: `Select all ${shown}` }).click();
+  await expect(bar).toContainText(`${shown} mixes selected`);
+  await expect(bar.getByRole("button", { name: "Select none" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(bar).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Edit Ultramarine armour/ })).toBeVisible();
+  await page.getByRole("group", { name: "Filter by colour family" }).getByRole("button", { name: "All colours" }).click();
+});
+
+test("several paints can be removed from My paints together", async () => {
+  await page.getByRole("link", { name: "My paints" }).click();
+  for (const name of ["Greenskin", "Flat Earth"]) await page.getByRole("button", { name: `I own ${name}` }).click();
+  await expect(page.locator(".paint-groups .paint-row")).toHaveCount(4);
+  await page.getByRole("button", { name: "Select", exact: true }).click();
+  // A click anywhere on a row picks it.
+  await page.locator(".paint-groups .paint-row", { hasText: "Greenskin" }).click();
+  await page.getByRole("checkbox", { name: "Select Flat Earth" }).check();
+  const bar = page.getByRole("region", { name: "Selection" });
+  await expect(bar).toContainText("2 paints selected");
+  await bar.getByRole("button", { name: "Delete" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Remove 2 paints" }).click();
+  await expect(page.getByText("2 paints removed from My paints.")).toBeVisible();
+  await expect(page.locator(".paint-groups .paint-row")).toHaveCount(2);
+  await expect(page.locator(".paint-groups")).not.toContainText("Greenskin");
+});
+
+test("the My paints tabs have no scrollbar", async () => {
+  const tabs = page.getByRole("navigation", { name: "Paints" });
+  expect(await tabs.evaluate((element) => getComputedStyle(element).overflowX)).toBe("visible");
+});
+
 // ---------- Theme ----------
 
 test("the theme switch cycles device, light and dark, and dark survives a reload", async () => {

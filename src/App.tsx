@@ -128,6 +128,12 @@ export default function App() {
     if (await archive.deleteMix(mix)) showNotice("Mix removed from your archive.");
   }
 
+  async function deleteMixes(mixes: Mix[]) {
+    const done = await archive.deleteMixes(mixes);
+    if (done) showNotice(`${plural(mixes.length, "mix", "mixes")} removed from your archive.`);
+    return done;
+  }
+
   function openMixForm(mix: Mix | null) {
     if (archive.kind === "cloud") archive.setError("");
     setDialog({ type: "mix", mix });
@@ -335,6 +341,8 @@ export default function App() {
                     onEditMix={openMixForm}
                     onViewMix={viewMix}
                     onDeleteMix={deleteMix}
+                    onDeleteMixes={deleteMixes}
+                    busy={busy}
                     onShareMix={(mix) => share({ kind: "mix", title: mix.name, mixes: [mix] })}
                     onToggleFavorite={toggleFavorite}
                     onMatchColor={() => setDialog({ type: "match" })}
@@ -347,8 +355,8 @@ export default function App() {
             <Route path="/recipes" element={<RecipesPage archive={archive} shelf={shelf} errors={accountBanner} notice={notice} showNotice={showNotice} onViewMix={viewMix} />} />
             <Route path="/projects" element={<ProjectsPage archive={archive} errors={accountBanner} notice={notice} showNotice={showNotice} />} />
             <Route path="/projects/:projectId" element={<ProjectPage archive={archive} shelf={shelf} errors={accountBanner} notice={notice} showNotice={showNotice} onViewMix={viewMix} />} />
-            <Route path="/paints" element={<PaintsPage tab="shelf" archive={archive} errors={accountBanner} notice={notice} showNotice={showNotice} />} />
-            <Route path="/paints/shopping" element={<PaintsPage tab="shopping" archive={archive} errors={accountBanner} notice={notice} showNotice={showNotice} />} />
+            <Route path="/paints" element={<PaintsPage key="shelf" tab="shelf" archive={archive} errors={accountBanner} notice={notice} showNotice={showNotice} />} />
+            <Route path="/paints/shopping" element={<PaintsPage key="shopping" tab="shopping" archive={archive} errors={accountBanner} notice={notice} showNotice={showNotice} />} />
             <Route
               path="/profile"
               element={!auth.ready ? null : auth.user ? (

@@ -18,6 +18,8 @@ export interface ArchiveStore {
   setFavorite(mix: Mix, favorite: boolean): Promise<Mix>;
   /** Deletes a mix and removes it from every collection. Recipes and projects keep a gap where it was. */
   deleteMix(mix: Mix): Promise<void>;
+  /** Deletes several mixes as one change, removing them from every collection. */
+  deleteMixes(mixes: Mix[]): Promise<void>;
   saveCollection(values: CollectionInput, existing: Collection | null): Promise<Collection>;
   deleteCollection(id: string): Promise<void>;
 
@@ -31,6 +33,8 @@ export interface ArchiveStore {
   removeProjectPhoto(project: Project, photoId: string): Promise<Project>;
   savePaint(values: PaintInput, existing: OwnedPaint | null): Promise<OwnedPaint>;
   deletePaint(id: string): Promise<void>;
+  /** Takes several paints off My paints as one change. */
+  deletePaints(ids: string[]): Promise<void>;
 
   /** Adds (merge) or swaps in (replace) a whole archive. `label` names renamed collections, e.g. "shared". */
   importArchive(archive: Archive, options: { mode: ImportMode; label: string; failureMessage?: string }): Promise<ImportResult>;

@@ -256,6 +256,17 @@ export function createCloudStore(userId: string, client: SupabaseClient = requir
       return toMix(result.data as MixRow, { [mix.imagePath || ""]: mix.image });
     },
 
+    async deleteMixes(selected) {
+      const message = "These mixes could not be deleted.";
+      const ids = selected.map((mix) => mix.id);
+      // Ids reach an in() filter, so only well-formed ones are allowed.
+      requireIds(ids, message);
+      for (let start = 0; start < ids.length; start += 100) {
+        ok(await client.from("mixes").delete().in("id", ids.slice(start, start + 100)), message);
+      }
+      await removePhotos(selected.map((mix) => mix.imagePath));
+    },
+
     async deleteMix(mix) {
       ok(await client.from("mixes").delete().eq("id", mix.id), "The mix could not be deleted.");
       await removePhotos([mix.imagePath]);
@@ -368,6 +379,15 @@ export function createCloudStore(userId: string, client: SupabaseClient = requir
       requireIds([id], "The paint could not be removed.");
       const result = await client.from("paints").delete().eq("id", id);
       if (result.error) fail("The paint could not be removed.", result.error);
+    },
+
+    async deletePaints(ids) {
+      const message = "These paints could not be removed.";
+      requireIds(ids, message);
+      for (let start = 0; start < ids.length; start += 100) {
+        const result = await client.from("paints").delete().in("id", ids.slice(start, start + 100));
+        if (result.error) fail(message, result.error);
+      }
     },
 
     async importArchive(archive, { mode, label }) {
