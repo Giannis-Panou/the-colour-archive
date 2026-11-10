@@ -25,9 +25,10 @@ interface ProfilePageProps {
   onUpdateUser: (changes: UserAttributes) => Promise<User>;
   onExport: () => void;
   onSignOut: () => void;
+  onViewMix: (mix: Mix) => void;
 }
 
-export function ProfilePage({ user, displayName, mixes, collections, onUpdateUser, onExport, onSignOut }: ProfilePageProps) {
+export function ProfilePage({ user, displayName, mixes, collections, onUpdateUser, onExport, onSignOut, onViewMix }: ProfilePageProps) {
   const savedName = String(user.user_metadata?.display_name ?? "");
   const [name, setName] = useState(savedName);
   const [nameStatus, setNameStatus] = useState<Status>(IDLE);
@@ -137,9 +138,11 @@ export function ProfilePage({ user, displayName, mixes, collections, onUpdateUse
           {recentColours.length ? (
             <ul className="profile-palette">
               {recentColours.map((mix) => (
-                <li key={mix.id} title={`${mix.name} · ${mix.color.toUpperCase()}`}>
-                  <span style={{ backgroundColor: mix.color }} />
-                  <small>{mix.name}</small>
+                <li key={mix.id}>
+                  <button className="profile-swatch" onClick={() => onViewMix(mix)} title={`${mix.name} · ${mix.color.toUpperCase()}`} aria-label={`View ${mix.name}`}>
+                    <span style={{ backgroundColor: mix.color }} />
+                    <small>{mix.name}</small>
+                  </button>
                 </li>
               ))}
             </ul>

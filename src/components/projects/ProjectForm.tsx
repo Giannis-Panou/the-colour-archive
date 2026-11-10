@@ -49,7 +49,7 @@ export function ProjectForm({ project, recipes, mixes, busy, saveError, onSave, 
           <label className="field-label">Project name
             <input className="text-input" value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Ultramarines strike force" autoFocus maxLength={70} />
           </label>
-          <label className="field-label">Notes <span className="optional-label">OPTIONAL</span>
+          <label className="field-label"><span className="field-label-text">Notes <span className="optional-label">OPTIONAL</span></span>
             <textarea className="text-input notes-input" value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Models in the project, deadlines, ideas…" maxLength={500} />
           </label>
 

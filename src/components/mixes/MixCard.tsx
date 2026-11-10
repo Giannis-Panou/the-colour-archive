@@ -1,5 +1,5 @@
 import { Pencil, Share2, Star, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useState, type MouseEvent } from "react";
 import type { Mix } from "../../types";
 import type { PaintShelf } from "../../lib/paints";
 import { MixSwatch } from "./MixSwatch";
@@ -15,16 +15,27 @@ interface MixCardProps {
   onEdit: (mix: Mix) => void;
   onDelete: (mix: Mix) => void;
   onToggleFavorite: (mix: Mix) => void;
+  /** Opens the mix's details. */
+  onView: (mix: Mix) => void;
 }
 
-export function MixCard({ mix, shelf, onShare, onEdit, onDelete, onToggleFavorite }: MixCardProps) {
+export function MixCard({ mix, shelf, onShare, onEdit, onDelete, onToggleFavorite, onView }: MixCardProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const totalDrops = mix.paints.reduce((total, paint) => total + Number(paint.drops), 0);
   const favoriteLabel = mix.favorite ? `Remove ${mix.name} from favourites` : `Add ${mix.name} to favourites`;
 
+  // A click anywhere on the card opens its details, except on its own buttons and the delete check.
+  function openFromCard(event: MouseEvent<HTMLElement>) {
+    if (confirmDelete || (event.target as HTMLElement).closest("button, a, .confirm-overlay")) return;
+    onView(mix);
+  }
+
   return (
-    <article className={`mix-card ${mix.favorite ? "favorite" : ""}`}>
+    <article className={`mix-card ${mix.favorite ? "favorite" : ""}`} onClick={openFromCard}>
       <MixSwatch mix={mix} className="mix-image">
+        {/* The keyboard way in; the card's click handler covers the mouse. */}
+        <button className="mix-open" onClick={() => onView(mix)} aria-label={`View ${mix.name}`} title={`View ${mix.name}`} />
+
         <div className="mix-card-actions">
           <button
             className={`favorite-button ${mix.favorite ? "on" : ""}`}

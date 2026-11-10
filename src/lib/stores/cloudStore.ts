@@ -454,12 +454,12 @@ export function createCloudStore(userId: string, client: SupabaseClient = requir
         }
       }
 
-      let addedOther = 0;
-      const insertRows = async (table: string, rows: Record<string, unknown>[], message: string) => {
+      const addedOther = { recipes: 0, projects: 0, paints: 0 };
+      const insertRows = async (table: keyof typeof addedOther, rows: Record<string, unknown>[], message: string) => {
         if (!rows.length) return;
         const result = await client.from(table).insert(rows);
         if (result.error) fail(message, result.error);
-        addedOther += rows.length;
+        addedOther[table] += rows.length;
       };
 
       const paintRows: Record<string, unknown>[] = [];

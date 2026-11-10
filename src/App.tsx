@@ -9,6 +9,7 @@ import { ConfirmDialog } from "./components/ConfirmDialog";
 import { Sidebar } from "./components/layout/Sidebar";
 import { Topbar } from "./components/layout/Topbar";
 import { MatchDialog } from "./components/mixes/MatchDialog";
+import { MixDetail } from "./components/mixes/MixDetail";
 import { MixForm } from "./components/mixes/MixForm";
 import { ShareDialog } from "./components/sharing/ShareDialog";
 import { SharedPage } from "./components/sharing/SharedPage";
@@ -34,11 +35,12 @@ import { ProjectsPage } from "./pages/ProjectsPage";
 import { RecipesPage } from "./pages/RecipesPage";
 
 /** Counts of the newer parts of an archive, e.g. "2 recipes, 1 project and 14 paints". */
-function describeOther(archive: Archive): string {
+function describeOther(counts: Archive | { recipes: number; projects: number; paints: number }): string {
+  const count = (value: unknown[] | number) => (typeof value === "number" ? value : value.length);
   const parts = [
-    archive.recipes.length && plural(archive.recipes.length, "recipe"),
-    archive.projects.length && plural(archive.projects.length, "project"),
-    archive.paints.length && plural(archive.paints.length, "paint"),
+    count(counts.recipes) && plural(count(counts.recipes), "recipe"),
+    count(counts.projects) && plural(count(counts.projects), "project"),
+    count(counts.paints) && plural(count(counts.paints), "paint"),
   ].filter((part): part is string => Boolean(part));
   return parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0] || "";
 }
@@ -67,6 +69,10 @@ export default function App() {
   const theme = useTheme();
 
   const [dialog, setDialog] = useState<Dialog>(null);
+  // The mix details window opens on top of whatever is open (e.g. Match a colour), so it has its own state.
+  const [viewingMixId, setViewingMixId] = useState<string | null>(null);
+  const viewingMix = archive.mixes.find((mix) => mix.id === viewingMixId) ?? null;
+  const viewMix = useCallback((mix: Mix) => setViewingMixId(mix.id), []);
   const [collectionsExpanded, setCollectionsExpanded] = useState(() => !isNarrowScreen());
   const [sidebarOpen, setSidebarOpen] = useState(isSidebarScreen);
   const [shareError, setShareError] = useState("");
@@ -188,7 +194,8 @@ export default function App() {
     let message = mode === "replace"
       ? `Archive replaced with ${describeCounts(result.addedMixes, result.addedCollections)} from the backup.`
       : `Imported ${describeCounts(result.addedMixes, result.addedCollections)}.`;
-    if (result.addedOther) message += ` Also added ${plural(result.addedOther, "recipe, project or paint", "recipes, projects and paints")}.`;
+    const other = describeOther(result.addedOther);
+    if (other) message += ` Also added ${other}.`;
     if (result.skippedMixes) message += ` ${result.skippedMixes} ${result.skippedMixes === 1 ? "mix was" : "mixes were"} already in your archive.`;
     showNotice(message, 5000);
   }
@@ -326,6 +333,7 @@ export default function App() {
                     onRetry={archive.reload}
                     onNewMix={() => openMixForm(null)}
                     onEditMix={openMixForm}
+                    onViewMix={viewMix}
                     onDeleteMix={deleteMix}
                     onShareMix={(mix) => share({ kind: "mix", title: mix.name, mixes: [mix] })}
                     onToggleFavorite={toggleFavorite}
@@ -336,9 +344,9 @@ export default function App() {
                 )}
               />
             ))}
-            <Route path="/recipes" element={<RecipesPage archive={archive} shelf={shelf} errors={accountBanner} notice={notice} showNotice={showNotice} />} />
+            <Route path="/recipes" element={<RecipesPage archive={archive} shelf={shelf} errors={accountBanner} notice={notice} showNotice={showNotice} onViewMix={viewMix} />} />
             <Route path="/projects" element={<ProjectsPage archive={archive} errors={accountBanner} notice={notice} showNotice={showNotice} />} />
-            <Route path="/projects/:projectId" element={<ProjectPage archive={archive} shelf={shelf} errors={accountBanner} notice={notice} showNotice={showNotice} />} />
+            <Route path="/projects/:projectId" element={<ProjectPage archive={archive} shelf={shelf} errors={accountBanner} notice={notice} showNotice={showNotice} onViewMix={viewMix} />} />
             <Route path="/paints" element={<PaintsPage tab="shelf" archive={archive} errors={accountBanner} notice={notice} showNotice={showNotice} />} />
             <Route path="/paints/shopping" element={<PaintsPage tab="shopping" archive={archive} errors={accountBanner} notice={notice} showNotice={showNotice} />} />
             <Route
@@ -352,6 +360,7 @@ export default function App() {
                   onUpdateUser={auth.updateUser}
                   onExport={exportBackup}
                   onSignOut={signOut}
+                  onViewMix={viewMix}
                 />
               ) : <Navigate to="/" replace />}
             />
@@ -366,7 +375,7 @@ export default function App() {
         <MixForm mix={dialog.mix} ownedPaints={archive.paints} busy={busy} saveError={dialogError} onSave={saveMix} onClose={() => { if (!busy) closeDialog(); }} />
       )}
       {dialog?.type === "match" && (
-        <MatchDialog mixes={archive.mixes} onOpenMix={openMixForm} onClose={closeDialog} />
+        <MatchDialog mixes={archive.mixes} onOpenMix={viewMix} onClose={closeDialog} />
       )}
       {dialog?.type === "collection" && (
         <CollectionForm
@@ -460,6 +469,21 @@ export default function App() {
         />
       )}
       {dialog?.type === "signIn" && <SignInDialog onClose={closeDialog} />}
+      {viewingMix && (
+        <MixDetail
+          mix={viewingMix}
+          shelf={shelf}
+          collections={archive.collections}
+          recipes={archive.recipes}
+          projects={archive.projects}
+          busy={busy}
+          onToggleFavorite={toggleFavorite}
+          // Editing or sharing replaces whatever was open underneath, such as Match a colour.
+          onEdit={(mix) => { setViewingMixId(null); openMixForm(mix); }}
+          onShare={(mix) => { setViewingMixId(null); share({ kind: "mix", title: mix.name, mixes: [mix] }); }}
+          onClose={() => setViewingMixId(null)}
+        />
+      )}
       {auth.recovering && (
         // A password-reset email signed someone in: ask for the new password.
         <SetPasswordDialog

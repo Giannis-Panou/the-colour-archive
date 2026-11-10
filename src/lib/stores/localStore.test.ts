@@ -85,10 +85,10 @@ describe("localStore", () => {
       ],
     });
     const result = await localStore.importArchive(incoming, { mode: "merge", label: "imported" });
-    expect(result.addedOther).toBe(3);
+    expect(result.addedOther).toEqual({ recipes: 1, projects: 1, paints: 1 });
     expect(result.archive.paints.map((paint) => paint.name)).toEqual(["Greenskin", "Kraken Ink"]);
     // Importing the same file again adds nothing.
-    expect((await localStore.importArchive(incoming, { mode: "merge", label: "imported" })).addedOther).toBe(0);
+    expect((await localStore.importArchive(incoming, { mode: "merge", label: "imported" })).addedOther).toEqual({ recipes: 0, projects: 0, paints: 0 });
   });
 
   it("replaces the archive with a backup", async () => {

@@ -225,7 +225,7 @@ export const localStore: ArchiveStore = {
         addedMixes: archive.mixes.length,
         skippedMixes: 0,
         addedCollections: archive.collections.length,
-        addedOther: archive.recipes.length + archive.projects.length + archive.paints.length,
+        addedOther: { recipes: archive.recipes.length, projects: archive.projects.length, paints: archive.paints.length },
       };
     }
 
@@ -273,7 +273,7 @@ export const localStore: ArchiveStore = {
       addedMixes: newMixes.length,
       skippedMixes: incoming.mixes.length - newMixes.length,
       addedCollections: collections.length - current.collections.length,
-      addedOther: newRecipes.length + newProjects.length + newPaints.length,
+      addedOther: { recipes: newRecipes.length, projects: newProjects.length, paints: newPaints.length },
     };
   },
 

@@ -1,6 +1,6 @@
 import { BookOpen, LoaderCircle, Plus, Search, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { Recipe, RecipeInput } from "../types";
+import type { Mix, Recipe, RecipeInput } from "../types";
 import type { ArchiveApi } from "../hooks/useArchive";
 import type { PaintShelf } from "../lib/paints";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -14,10 +14,11 @@ interface RecipesPageProps {
   errors: string[];
   notice: string;
   showNotice: (message: string) => void;
+  onViewMix: (mix: Mix) => void;
 }
 
 /** Paint schemes: ordered steps from primer to varnish, each using a mix or a single paint. */
-export function RecipesPage({ archive, shelf, errors, notice, showNotice }: RecipesPageProps) {
+export function RecipesPage({ archive, shelf, errors, notice, showNotice, onViewMix }: RecipesPageProps) {
   const [editing, setEditing] = useState<{ recipe: Recipe | null } | null>(null);
   const [deleting, setDeleting] = useState<Recipe | null>(null);
   const [query, setQuery] = useState("");
@@ -84,7 +85,7 @@ export function RecipesPage({ archive, shelf, errors, notice, showNotice }: Reci
           <div className="archive-loading" role="status"><LoaderCircle size={22} className="spin" /><span>Loading your recipes…</span></div>
         ) : visible.length > 0 ? (
           <div className="recipe-grid">
-            {visible.map((recipe) => <RecipeCard key={recipe.id} recipe={recipe} mixesById={mixesById} shelf={shelf} onEdit={openForm} onDelete={setDeleting} />)}
+            {visible.map((recipe) => <RecipeCard key={recipe.id} recipe={recipe} mixesById={mixesById} shelf={shelf} onEdit={openForm} onDelete={setDeleting} onViewMix={onViewMix} />)}
           </div>
         ) : archive.recipes.length > 0 ? (
           <div className="empty-search">

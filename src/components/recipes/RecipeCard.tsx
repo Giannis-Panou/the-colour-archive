@@ -8,10 +8,12 @@ interface RecipeCardProps {
   shelf: PaintShelf;
   onEdit?: (recipe: Recipe) => void;
   onDelete?: (recipe: Recipe) => void;
+  /** Opens a step's mix. */
+  onViewMix?: (mix: Mix) => void;
 }
 
 /** A recipe's steps in painting order, each with the colour it uses. */
-export function RecipeCard({ recipe, mixesById, shelf, onEdit, onDelete }: RecipeCardProps) {
+export function RecipeCard({ recipe, mixesById, shelf, onEdit, onDelete, onViewMix }: RecipeCardProps) {
   return (
     <article className="recipe-card">
       <div className="recipe-strip" aria-hidden="true">
@@ -46,7 +48,9 @@ export function RecipeCard({ recipe, mixesById, shelf, onEdit, onDelete }: Recip
                 <span className="step-copy">
                   <span className="step-role">{step.role}</span>
                   <strong className={step.mixId && !mix ? "step-gone" : ""}>
-                    {label}
+                    {mix && onViewMix
+                      ? <button className="step-mix-link" onClick={() => onViewMix(mix)} title={`View ${mix.name}`}>{label}</button>
+                      : label}
                     {mix && <span className="step-kind">mix</span>}
                     {missing && <span className="missing-paint" title="Not on My paints">not owned</span>}
                   </strong>

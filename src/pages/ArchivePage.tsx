@@ -35,6 +35,7 @@ interface ArchivePageProps {
   onRetry: () => void;
   onNewMix: () => void;
   onEditMix: (mix: Mix) => void;
+  onViewMix: (mix: Mix) => void;
   onDeleteMix: (mix: Mix) => void;
   onShareMix: (mix: Mix) => void;
   onToggleFavorite: (mix: Mix) => void;
@@ -46,7 +47,7 @@ interface ArchivePageProps {
 /** "My archive" and a single collection: heading, summary, filters, sort and the mix grid. */
 export function ArchivePage({
   mixes, collection, shelf, loading, loadFailed, errors, notice,
-  onRetry, onNewMix, onEditMix, onDeleteMix, onShareMix, onToggleFavorite, onMatchColor, onShareCollection, onManageCollection,
+  onRetry, onNewMix, onEditMix, onViewMix, onDeleteMix, onShareMix, onToggleFavorite, onMatchColor, onShareCollection, onManageCollection,
 }: ArchivePageProps) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortOrder>("newest");
@@ -56,7 +57,7 @@ export function ArchivePage({
 
   const collectionMixes = useMemo(() => (collection ? mixes.filter((mix) => collection.mixIds.includes(mix.id)) : mixes), [mixes, collection]);
   const uniquePaints = useMemo(() => new Set(mixes.flatMap((mix) => mix.paints.map((paint) => `${paint.brand}:${paint.name}`))).size, [mixes]);
-  const recentColors = useMemo(() => [...mixes].sort(COMPARE.newest).slice(0, 5).map((mix) => mix.color), [mixes]);
+  const recentMixes = useMemo(() => [...mixes].sort(COMPARE.newest).slice(0, 6), [mixes]);
 
   // Filters only offer what this view contains.
   const familyCounts = useMemo(() => {
@@ -111,19 +112,22 @@ export function ArchivePage({
         <div className="summary-card">
           <span className="summary-icon archive-icon"><Archive size={18} /></span>
           <span className="summary-copy"><span className="summary-label">IN YOUR ARCHIVE</span><strong>{mixes.length} <small>{mixes.length === 1 ? "mix" : "mixes"}</small></strong></span>
-          <span className="summary-decoration">01</span>
         </div>
         <div className="summary-card">
           <span className="summary-icon paint-icon"><Beaker size={18} /></span>
           <span className="summary-copy"><span className="summary-label">PAINTS USED</span><strong>{uniquePaints} <small>unique paints</small></strong></span>
-          <span className="summary-decoration">02</span>
         </div>
         <div className="summary-card palette-summary">
-          <div className="palette-swatches" aria-hidden="true">
-            {[0, 1, 2, 3, 4].map((index) => <i key={index} style={recentColors[index] ? { backgroundColor: recentColors[index] } : undefined} />)}
-          </div>
-          <span className="summary-copy"><span className="summary-label">YOUR PALETTE</span><strong><small>{recentColors.length ? "Your latest colours" : "A collection in the making"}</small></strong></span>
-          <span className="summary-decoration">03</span>
+          <span className="summary-label">YOUR LATEST COLOURS</span>
+          {recentMixes.length ? (
+            <div className="palette-strip">
+              {recentMixes.map((mix) => (
+                <button key={mix.id} style={{ backgroundColor: mix.color }} onClick={() => onViewMix(mix)} aria-label={`View ${mix.name}`} title={`${mix.name} · ${mix.color.toUpperCase()}`} />
+              ))}
+            </div>
+          ) : (
+            <span className="palette-empty">Your newest mixes will show here.</span>
+          )}
         </div>
       </section>
 
@@ -211,7 +215,7 @@ export function ArchivePage({
         ) : visibleMixes.length > 0 ? (
           <div className="mix-grid">
             {visibleMixes.map((mix) => (
-              <MixCard key={mix.id} mix={mix} shelf={shelf} onShare={onShareMix} onEdit={onEditMix} onDelete={onDeleteMix} onToggleFavorite={onToggleFavorite} />
+              <MixCard key={mix.id} mix={mix} shelf={shelf} onShare={onShareMix} onEdit={onEditMix} onDelete={onDeleteMix} onToggleFavorite={onToggleFavorite} onView={onViewMix} />
             ))}
           </div>
         ) : collection && !filtersActive ? (

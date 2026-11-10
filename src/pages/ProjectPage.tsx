@@ -1,7 +1,7 @@
 import { ArrowLeft, Camera, ImagePlus, LoaderCircle, Pencil, Trash2, X } from "lucide-react";
 import { useMemo, useRef, useState, type ChangeEvent } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router";
-import type { ProjectInput, ProjectPhoto } from "../types";
+import type { Mix, ProjectInput, ProjectPhoto } from "../types";
 import type { ArchiveApi } from "../hooks/useArchive";
 import type { PaintShelf } from "../lib/paints";
 import { preparePhoto } from "../lib/images";
@@ -23,12 +23,13 @@ interface ProjectPageProps {
   errors: string[];
   notice: string;
   showNotice: (message: string) => void;
+  onViewMix: (mix: Mix) => void;
 }
 
 type Dialog = null | { type: "edit" } | { type: "delete" } | { type: "addPhoto"; image: string } | { type: "viewPhoto"; photo: ProjectPhoto } | { type: "deletePhoto"; photo: ProjectPhoto };
 
 /** One project: its recipes, its mixes and its progress photos. */
-export function ProjectPage({ archive, shelf, errors, notice, showNotice }: ProjectPageProps) {
+export function ProjectPage({ archive, shelf, errors, notice, showNotice, onViewMix }: ProjectPageProps) {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -152,7 +153,7 @@ export function ProjectPage({ archive, shelf, errors, notice, showNotice }: Proj
         </div>
         {recipes.length ? (
           <div className="recipe-grid">
-            {recipes.map((recipe) => <RecipeCard key={recipe.id} recipe={recipe} mixesById={mixesById} shelf={shelf} />)}
+            {recipes.map((recipe) => <RecipeCard key={recipe.id} recipe={recipe} mixesById={mixesById} shelf={shelf} onViewMix={onViewMix} />)}
           </div>
         ) : (
           <p className="section-empty">No recipes linked yet. <button className="text-button" onClick={() => setDialog({ type: "edit" })}>Choose recipes</button></p>
@@ -166,7 +167,11 @@ export function ProjectPage({ archive, shelf, errors, notice, showNotice }: Proj
         {mixes.length ? (
           <ul className="mix-chips">
             {mixes.map((mix) => (
-              <li key={mix.id}><span className="collection-mix-swatch" style={{ backgroundColor: mix.color }} /> <strong>{mix.name}</strong> <small>{mix.color.toUpperCase()}</small></li>
+              <li key={mix.id}>
+                <button className="mix-chip" onClick={() => onViewMix(mix)} aria-label={`View ${mix.name}`}>
+                  <span className="collection-mix-swatch" style={{ backgroundColor: mix.color }} /> <strong>{mix.name}</strong> <small>{mix.color.toUpperCase()}</small>
+                </button>
+              </li>
             ))}
           </ul>
         ) : (

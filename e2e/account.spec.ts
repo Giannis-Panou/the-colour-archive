@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { disableShareSheet, HAS_SUPABASE, mockSignedIn } from "./support";
+import { disableShareSheet, HAS_SUPABASE, mockSignedIn, sample } from "./support";
 
 test.skip(!HAS_SUPABASE, "Accounts need VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY (see the README).");
 
@@ -69,6 +69,11 @@ test.describe("signed in (mocked account)", () => {
     await expect(page.locator(".profile-stats .summary-card strong")).toHaveText(["14", "3", "0", "26"]);
     await expect(page.locator(".breadcrumb")).toContainText("Profile");
     await expect(page.locator(".profile-palette li")).toHaveCount(8);
+    // A latest colour opens that mix's details.
+    const newest = [...sample.mixes].sort((x, y) => y.createdAt.localeCompare(x.createdAt))[0];
+    await page.getByRole("button", { name: `View ${newest.name}` }).click();
+    await expect(page.getByRole("dialog", { name: new RegExp(newest.name) })).toContainText(newest.color.toUpperCase());
+    await page.keyboard.press("Escape");
     await expect(page.getByText("giannis@example.com").first()).toBeVisible();
   });
 

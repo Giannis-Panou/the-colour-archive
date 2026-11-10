@@ -10,7 +10,7 @@ const RESULTS = 6;
 
 interface MatchDialogProps {
   mixes: Mix[];
-  /** Opens a matched mix, e.g. to edit it. */
+  /** Opens a matched mix's details on top of this dialog. */
   onOpenMix: (mix: Mix) => void;
   onClose: () => void;
 }
@@ -67,7 +67,12 @@ export function MatchDialog({ mixes, onOpenMix, onClose }: MatchDialogProps) {
           </button>
           <input ref={fileInput} className="sr-only" type="file" accept="image/*" onChange={choosePhoto} tabIndex={-1} aria-hidden="true" />
         </div>
-        {photo && <ColorSampler image={photo} onPick={pick} onError={showError} />}
+        {photo && (
+          <div className="match-photo">
+            <ColorSampler image={photo} onPick={pick} onError={showError} />
+            <button type="button" className="remove-photo" onClick={() => setPhoto("")}>Remove photo</button>
+          </div>
+        )}
         {error && <div className="form-error" role="alert">{error}</div>}
 
         <div className="form-section-heading"><span>{picked ? "CLOSEST MIXES" : "PICK A COLOUR TO START"}</span><span className="ingredient-hint">Ranked by how alike they look</span></div>
@@ -79,7 +84,7 @@ export function MatchDialog({ mixes, onOpenMix, onClose }: MatchDialogProps) {
           <ol className="match-results" aria-label="Closest mixes">
             {matches.map(({ mix, difference }) => (
               <li key={mix.id}>
-                <button className="match-result" type="button" onClick={() => onOpenMix(mix)} title={`Open ${mix.name}`}>
+                <button className="match-result" type="button" onClick={() => onOpenMix(mix)} title={`View ${mix.name}`}>
                   <span className="match-pair" aria-hidden="true">
                     <i style={{ backgroundColor: target }} />
                     <i style={{ backgroundColor: mix.color }} />

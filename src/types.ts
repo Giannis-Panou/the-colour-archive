@@ -114,7 +114,7 @@ export interface ImportResult {
   skippedMixes: number;
   addedCollections: number;
   /** Recipes, projects and paints added. */
-  addedOther: number;
+  addedOther: { recipes: number; projects: number; paints: number };
 }
 
 export type SharePayload =

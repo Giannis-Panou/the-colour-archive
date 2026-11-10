@@ -34,8 +34,14 @@ test.beforeEach(async ({ browser, baseURL }) => {
   // every response. The offline tests at the end run with it allowed.
   context = await browser.newContext({ baseURL, acceptDownloads: true, permissions: ["clipboard-read", "clipboard-write"], serviceWorkers: "block" });
   await context.route(`${baseURL}/**`, async (route) => {
-    const response = await route.fetch();
-    await route.fulfill({ response, headers: { ...response.headers(), ...HEADERS } });
+    try {
+      const response = await route.fetch();
+      await route.fulfill({ response, headers: { ...response.headers(), ...HEADERS } });
+    } catch (error) {
+      // The page navigated away while this request was in flight (e.g. the manifest or an icon),
+      // so the browser no longer wants it. Anything else is a real failure.
+      if (!/disposed|closed|Target page/i.test(String(error))) throw error;
+    }
   });
   await context.addInitScript(() => {
     (window as unknown as { __violations: string[] }).__violations = [];
@@ -72,7 +78,8 @@ test("the page is served with all the security headers", async () => {
 test("the app loads under the CSP with its fonts and no violations", async () => {
   const page = await open();
   await page.evaluate(() => document.fonts.ready);
-  expect(await page.evaluate(() => ["Barlow", "Barlow Condensed", "Space Mono"].map((font) => document.fonts.check(`16px "${font}"`)))).toEqual([true, true, true]);
+  // Browsers only download the weights a page uses, so check each family has a loaded face.
+  expect(await page.evaluate(() => ["Barlow", "Barlow Condensed", "Space Mono"].map((font) => [...document.fonts].some((face) => face.family.replace(/"/g, "") === font && face.status === "loaded")))).toEqual([true, true, true]);
   expect((await inspect(page)).violations).toEqual([]);
 });
 

@@ -54,7 +54,9 @@ Whoever opens a link can save the recipe to their own archive. Shared photos are
 
 - **Export** downloads the whole archive (mixes, collections, recipes, projects, paints and every photo) as a JSON file. For signed-in users, photos are embedded in the file. Backups made before recipes existed still import.
 - **Import** either adds a backup to your archive, skipping mixes you already have, or replaces your archive with it. Importing the same backup twice doesn't create duplicates.
-- [`sample-archive.json`](sample-archive.json) is a ready-made archive (14 mixes, 3 collections) you can import to try the app.
+- **Sample files to try the app:**
+  - [`sample-workshop.json`](sample-workshop.json) has a little of everything: 14 mixes (3 of them favourites), 3 collections, 4 recipes, 3 projects with progress photos, and 22 paints that are on the shelf, running low or on the wishlist, so the shopping list fills in too.
+  - [`sample-archive.json`](sample-archive.json) has only the mixes and collections (a version 1 backup). The browser tests use it.
 
 ### Design
 
@@ -123,7 +125,7 @@ npm run test:live   # Playwright tests against the real Supabase project
 
 | Suite | Tests | What it covers |
 |---|---|---|
-| Unit (`src/**/*.test.ts`) | 77 | Validation, backups (old and new versions), compressed links (including a "zip bomb" link), both stores, rollback when browser storage is full, CIEDE2000 against published reference values, colour families, paint matching and the shopping list |
+| Unit (`src/**/*.test.ts`) | 79 | Validation, backups (old and new versions), compressed links (including a "zip bomb" link), both stores, rollback when browser storage is full, CIEDE2000 against published reference values, colour families, paint matching and the shopping list, both sample files |
 | `e2e/archive.spec.ts` | 32 | The whole app signed out: mixes, photo sampling by mouse and keyboard, collections, search, sort, sharing, backups, addresses, phone layout |
 | `e2e/workshop.spec.ts` | 23 | Favourites, colour and paint filters, colour matching, My paints, the shopping list, recipes, projects with photos, the theme switch, phone tabs |
 | `e2e/account.spec.ts` | 13 | Sign-in dialog, profile page and sign-out against a mocked account; keyboard focus in dialogs; a database without the latest update |
@@ -148,7 +150,8 @@ npm run test:live   # Playwright tests against the real Supabase project
 ├── eslint.config.js          # ESLint with TypeScript and React Hooks rules
 ├── playwright.config.ts      # Browser tests (dev server and production build)
 ├── playwright.live.config.ts # Browser tests against the real Supabase project
-├── sample-archive.json       # Example archive to import
+├── sample-workshop.json      # Example archive with everything: mixes to projects and paints
+├── sample-archive.json       # Smaller example (mixes and collections), used by the tests
 ├── supabase/schema.sql       # Tables, row-level security, share lookup, storage buckets
 ├── e2e/                      # Playwright tests and shared helpers
 └── src/

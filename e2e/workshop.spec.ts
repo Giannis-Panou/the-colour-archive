@@ -99,8 +99,76 @@ test("a reference photo can be sampled to match, and a result opens the mix", as
   await expect.poll(async () => near(await dialog.getByLabel("Colour to match").inputValue(), [30, 60, 200])).toBe(true);
   const first = dialog.getByRole("list", { name: "Closest mixes" }).getByRole("listitem").first();
   await expect(first).toContainText("Ultramarine armour");
+  // The photo stays inside its frame, above the results, instead of spilling over them.
+  const frame = (await dialog.locator(".color-sampler-frame").boundingBox())!;
+  const photo = (await canvas.boundingBox())!;
+  const results = (await dialog.getByRole("list", { name: "Closest mixes" }).boundingBox())!;
+  expect(photo.y + photo.height).toBeLessThanOrEqual(frame.y + frame.height + 1);
+  expect(frame.y + frame.height).toBeLessThanOrEqual(results.y);
+  // Once the colour is picked, the photo can be put away; the match stays.
+  await dialog.getByRole("button", { name: "Remove photo" }).click();
+  await expect(canvas).toHaveCount(0);
+  await expect(first).toContainText("Ultramarine armour");
+  // A result opens the mix's details on top; closing them goes back to the matches.
   await first.getByRole("button").click();
+  await expect(page.getByRole("heading", { name: /Ultramarine armour/, level: 2 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Edit colour mix/ })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("heading", { name: /Match a colour/ })).toBeVisible();
+  await expect(first).toContainText("Ultramarine armour");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+// ---------- Mix details ----------
+
+test("clicking a mix card opens its details, not the edit form", async () => {
+  await card("Weathered bronze").locator(".paint-line").first().click();
+  const details = page.getByRole("dialog", { name: /Weathered bronze/ });
+  await expect(details).toBeVisible();
+  await expect(details).toContainText("#6F5A32");
+  await expect(details.locator(".paint-line")).toHaveCount(2);
+  await expect(details).toContainText("Horn tips and armour trim.");
+  await expect(page.getByRole("heading", { name: /Edit colour mix/ })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(details).toBeHidden();
+  // The card's own buttons still do their own thing.
+  await page.getByRole("button", { name: "Edit Weathered bronze" }).click();
   await expect(page.getByRole("heading", { name: /Edit colour mix/ })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("the summary shows the latest colours as blocks that open each mix, with no card numbers", async () => {
+  const summary = page.getByRole("region", { name: "Archive summary" });
+  await expect(summary).not.toContainText(/\b0[123]\b/);
+  const newest = [...sample.mixes].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const blocks = summary.locator(".palette-strip button");
+  await expect(blocks).toHaveCount(6);
+  await blocks.first().click();
+  await expect(page.getByRole("dialog", { name: new RegExp(newest[0].name) })).toBeVisible();
+  await page.keyboard.press("Escape");
+});
+
+test("the details open from the keyboard and return focus to the card", async () => {
+  const open = card("Weathered bronze").getByRole("button", { name: "View Weathered bronze" });
+  await open.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog", { name: /Weathered bronze/ })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(open).toBeFocused();
+});
+
+test("the details can star a mix and lead on to editing it", async () => {
+  await card("Weathered bronze").getByRole("button", { name: "View Weathered bronze" }).click();
+  const details = page.getByRole("dialog", { name: /Weathered bronze/ });
+  await details.getByRole("button", { name: "Add to favourites" }).click();
+  await expect(details.getByRole("button", { name: "Remove from favourites" })).toHaveAttribute("aria-pressed", "true");
+  await expect(details).toContainText("A FAVOURITE MIX");
+  await details.getByRole("button", { name: "Remove from favourites" }).click();
+  await details.getByRole("button", { name: /Edit mix/ }).click();
+  await expect(page.getByRole("heading", { name: /Edit colour mix/ })).toBeVisible();
+  await expect(page.getByPlaceholder("e.g. Stormy midnight blue")).toHaveValue("Weathered bronze");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
@@ -226,6 +294,13 @@ test("steps can be reordered, and the recipe search finds paints", async () => {
   await page.getByRole("button", { name: "Clear search" }).first().click();
 });
 
+test("a recipe step's mix opens its details, which list where it's used", async () => {
+  await page.locator(".recipe-card").getByRole("button", { name: "Ultramarine armour" }).click();
+  const details = page.getByRole("dialog", { name: /Ultramarine armour/ });
+  await expect(details.getByRole("list").last()).toContainText("Blue power armour");
+  await page.keyboard.press("Escape");
+});
+
 // ---------- Projects ----------
 
 test("a project links recipes and mixes and keeps progress photos", async () => {
@@ -241,6 +316,9 @@ test("a project links recipes and mixes and keeps progress photos", async () => 
   await expect(page.locator(".breadcrumb strong")).toHaveText("Blue company");
   await expect(page.locator(".recipe-card")).toContainText("Blue power armour");
   await expect(page.locator(".mix-chips")).toContainText("Gunmetal");
+  await page.getByRole("button", { name: "View Gunmetal" }).click();
+  await expect(page.getByRole("dialog", { name: /Gunmetal/ }).getByRole("link", { name: /Blue company/ })).toBeVisible();
+  await page.keyboard.press("Escape");
 
   await page.locator('.project-section input[type="file"]').setInputFiles(TWO_TONE);
   const photo = page.getByRole("dialog");
@@ -330,7 +408,8 @@ test("on a phone, the bottom tabs reach every page without sideways scrolling", 
   for (const [name, url] of [["Recipes", /\/recipes$/], ["Projects", /\/projects$/], ["My paints", /\/paints$/], ["Mixes", /\/$/]] as const) {
     await tabs.getByRole("link", { name }).click();
     await expect(page).toHaveURL(url);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), name).toBeLessThanOrEqual(0);
+    // Polled, because the page slides over for 0.28 s when the window narrows and the sidebar hides.
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), { message: name }).toBeLessThanOrEqual(0);
   }
   await page.getByRole("button", { name: "Toggle collections" }).click();
   await expect(page.getByRole("navigation", { name: "Collections" })).toBeVisible();

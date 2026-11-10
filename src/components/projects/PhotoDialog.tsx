@@ -29,7 +29,7 @@ export function PhotoDialog({ image, busy, saveError, onSave, onClose }: PhotoDi
       <form onSubmit={submit}>
         <div className="collection-form-content">
           <img className="photo-preview" src={image} alt="The photo you chose" />
-          <label className="field-label">Caption <span className="optional-label">OPTIONAL</span>
+          <label className="field-label"><span className="field-label-text">Caption <span className="optional-label">OPTIONAL</span></span>
             <input className="text-input" value={caption} onChange={(event) => setCaption(event.target.value)} placeholder="e.g. Base coats done" autoFocus maxLength={80} />
           </label>
           {saveError && <div className="form-error" role="alert">{saveError}</div>}
