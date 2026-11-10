@@ -8,6 +8,7 @@ import { CollectionForm } from "./components/collections/CollectionForm";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { Sidebar } from "./components/layout/Sidebar";
 import { Topbar } from "./components/layout/Topbar";
+import { MatchDialog } from "./components/mixes/MatchDialog";
 import { MixForm } from "./components/mixes/MixForm";
 import { ShareDialog } from "./components/sharing/ShareDialog";
 import { SharedPage } from "./components/sharing/SharedPage";
@@ -15,15 +16,32 @@ import { useArchive } from "./hooks/useArchive";
 import { useAuth } from "./hooks/useAuth";
 import { useNotice } from "./hooks/useNotice";
 import { useSharedLink } from "./hooks/useSharedLink";
+import { useTheme } from "./hooks/useTheme";
+import { completeArchive, isArchiveEmpty } from "./lib/archive";
 import { createBackupFile, downloadBlob, MAX_BACKUP_FILE_SIZE, parseBackup } from "./lib/backup";
 import { imageToDataUrl } from "./lib/images";
 import { isNarrowScreen, isSidebarScreen } from "./lib/media";
+import { paintsInUse, PaintShelf, shoppingList } from "./lib/paints";
 import { createCompressedLink, createShortLink, sharedMixes } from "./lib/sharing";
 import { clearLocalArchive, describeCounts, readLocalArchive } from "./lib/stores/localStore";
 import { hasStoredSession } from "./lib/supabase";
 import { isSharePhotoUrl, plural } from "./lib/validation";
 import { ArchivePage } from "./pages/ArchivePage";
+import { PaintsPage } from "./pages/PaintsPage";
 import { ProfilePage } from "./pages/ProfilePage";
+import { ProjectPage } from "./pages/ProjectPage";
+import { ProjectsPage } from "./pages/ProjectsPage";
+import { RecipesPage } from "./pages/RecipesPage";
+
+/** Counts of the newer parts of an archive, e.g. "2 recipes, 1 project and 14 paints". */
+function describeOther(archive: Archive): string {
+  const parts = [
+    archive.recipes.length && plural(archive.recipes.length, "recipe"),
+    archive.projects.length && plural(archive.projects.length, "project"),
+    archive.paints.length && plural(archive.paints.length, "paint"),
+  ].filter((part): part is string => Boolean(part));
+  return parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0] || "";
+}
 
 const MOVE_DISMISSED_KEY = "the-colour-archive-move-dismissed";
 
@@ -35,6 +53,7 @@ type Dialog =
   | { type: "deleteCollection"; collection: Collection }
   | { type: "import"; archive: Archive }
   | { type: "share"; target: ShareTarget }
+  | { type: "match" }
   | { type: "signIn" };
 
 export default function App() {
@@ -45,6 +64,7 @@ export default function App() {
   const [startsSignedIn] = useState(hasStoredSession);
   const archive = useArchive({ user: auth.user, authReady: auth.ready, startsSignedIn });
   const { notice, showNotice } = useNotice();
+  const theme = useTheme();
 
   const [dialog, setDialog] = useState<Dialog>(null);
   const [collectionsExpanded, setCollectionsExpanded] = useState(() => !isNarrowScreen());
@@ -54,7 +74,21 @@ export default function App() {
 
   const collectionMatch = useMatch("/collections/:collectionId");
   const onProfile = Boolean(useMatch("/profile"));
+  const projectMatch = useMatch("/projects/:projectId");
+  const onRecipes = Boolean(useMatch("/recipes"));
+  const onProjects = Boolean(useMatch("/projects"));
+  const onPaints = Boolean(useMatch("/paints"));
+  const onShopping = Boolean(useMatch("/paints/shopping"));
   const selectedCollection = archive.collections.find((collection) => collection.id === collectionMatch?.params.collectionId) || null;
+  const openProject = archive.projects.find((project) => project.id === projectMatch?.params.projectId);
+
+  // My paints, shared by every page that marks paints you don't own.
+  const shelf = useMemo(() => new PaintShelf(archive.paints), [archive.paints]);
+  const shoppingCount = useMemo(() => shoppingList(archive.paints, paintsInUse(archive.mixes, archive.recipes)).length, [archive.paints, archive.mixes, archive.recipes]);
+
+  const sectionTitle = onProfile && auth.user ? "Profile"
+    : selectedCollection?.name
+    ?? (onRecipes ? "Recipes" : onProjects ? "Projects" : projectMatch ? openProject?.name ?? "Project" : onPaints ? "My paints" : onShopping ? "Shopping list" : null);
   const closeDialog = useCallback(() => setDialog(null), []);
   const closeDrawerOnNarrow = useCallback(() => { if (isNarrowScreen()) setCollectionsExpanded(false); }, []);
 
@@ -66,7 +100,7 @@ export default function App() {
     if (!userId || archive.kind !== "cloud" || archive.loading || archive.loadFailed || moveAnsweredFor === userId) return null;
     try { if (localStorage.getItem(MOVE_DISMISSED_KEY) === userId) return null; } catch { /* storage unavailable */ }
     const { archive: local } = readLocalArchive();
-    return local.mixes.length || local.collections.length ? local : null;
+    return isArchiveEmpty(local) ? null : local;
   }, [userId, archive.kind, archive.loading, archive.loadFailed, moveAnsweredFor]);
 
   // Leaving a collection that no longer exists (deleted, replaced by an import) returns to the archive.
@@ -91,6 +125,11 @@ export default function App() {
   function openMixForm(mix: Mix | null) {
     if (archive.kind === "cloud") archive.setError("");
     setDialog({ type: "mix", mix });
+  }
+
+  async function toggleFavorite(mix: Mix) {
+    const saved = await archive.setFavorite(mix, !mix.favorite);
+    if (saved) showNotice(saved.favorite ? `“${mix.name}” added to favourites.` : `“${mix.name}” removed from favourites.`);
   }
 
   // ---------- Collections ----------
@@ -120,7 +159,8 @@ export default function App() {
       const { blob, filename } = createBackupFile(ready);
       downloadBlob(blob, filename);
       setBackupError("");
-      showNotice(`Backup downloaded with ${describeCounts(ready.mixes.length, ready.collections.length)}.`, 4000);
+      const other = describeOther(ready);
+      showNotice(`Backup downloaded with ${describeCounts(ready.mixes.length, ready.collections.length)}${other ? `, plus ${other}` : ""}.`, 4000);
     } catch (error) {
       console.error("Could not export the archive:", error);
       setBackupError("The backup could not be created. Please try again.");
@@ -131,7 +171,7 @@ export default function App() {
     if (file.size > MAX_BACKUP_FILE_SIZE) return setBackupError("This file is too large to be a Colour Archive backup.");
     try {
       const backup = parseBackup(await file.text());
-      if (!backup.mixes.length && !backup.collections.length) throw new Error("This backup is empty. There is nothing to import.");
+      if (isArchiveEmpty(backup)) throw new Error("This backup is empty. There is nothing to import.");
       setBackupError("");
       setDialog({ type: "import", archive: backup });
     } catch (error) {
@@ -148,6 +188,7 @@ export default function App() {
     let message = mode === "replace"
       ? `Archive replaced with ${describeCounts(result.addedMixes, result.addedCollections)} from the backup.`
       : `Imported ${describeCounts(result.addedMixes, result.addedCollections)}.`;
+    if (result.addedOther) message += ` Also added ${plural(result.addedOther, "recipe, project or paint", "recipes, projects and paints")}.`;
     if (result.skippedMixes) message += ` ${result.skippedMixes} ${result.skippedMixes === 1 ? "mix was" : "mixes were"} already in your archive.`;
     showNotice(message, 5000);
   }
@@ -206,7 +247,7 @@ export default function App() {
     const collections = payload.kind === "collection"
       ? [{ id: crypto.randomUUID(), name: payload.name.trim() || "Shared collection", mixIds: mixes.map((mix) => mix.id), createdAt: new Date().toISOString() }]
       : [];
-    const result = await archive.importArchive({ mixes, collections }, {
+    const result = await archive.importArchive(completeArchive({ mixes, collections }), {
       mode: "merge",
       label: "shared",
       failureMessage: payload.kind === "mix" ? "This mix could not be saved. Your browser storage may be full." : "This collection could not be saved. Your browser storage may be full.",
@@ -243,6 +284,7 @@ export default function App() {
         collections={archive.collections}
         mixes={archive.mixes}
         selectedCollectionId={selectedCollection?.id ?? null}
+        shoppingCount={shoppingCount}
         expanded={collectionsExpanded}
         onToggleExpanded={() => setCollectionsExpanded((expanded) => !expanded)}
         onNavigate={closeDrawerOnNarrow}
@@ -252,15 +294,17 @@ export default function App() {
 
       <main className="main-content" id="archive">
         <Topbar
-          sectionTitle={onProfile && auth.user ? "Profile" : selectedCollection?.name || null}
+          sectionTitle={sectionTitle}
           sidebarOpen={sidebarOpen}
           onToggleSidebar={() => setSidebarOpen((open) => !open)}
-          canExport={Boolean(archive.mixes.length || archive.collections.length)}
+          canExport={!isArchiveEmpty(archive.archive)}
           onExport={exportBackup}
           onImportFile={chooseBackupFile}
           account={auth.user ? { displayName: auth.displayName, email: auth.user.email || "", syncing: archive.loading || busy, onProfile } : null}
           accountsEnabled={auth.enabled}
           onSignIn={() => setDialog({ type: "signIn" })}
+          theme={theme.choice}
+          onCycleTheme={theme.cycle}
         />
 
         <section className="page-content">
@@ -274,6 +318,7 @@ export default function App() {
                     key={selectedCollection?.id ?? "all"}
                     mixes={archive.mixes}
                     collection={selectedCollection}
+                    shelf={shelf}
                     loading={archive.loading}
                     loadFailed={archive.loadFailed}
                     errors={accountBanner}
@@ -283,12 +328,19 @@ export default function App() {
                     onEditMix={openMixForm}
                     onDeleteMix={deleteMix}
                     onShareMix={(mix) => share({ kind: "mix", title: mix.name, mixes: [mix] })}
+                    onToggleFavorite={toggleFavorite}
+                    onMatchColor={() => setDialog({ type: "match" })}
                     onShareCollection={(collection, mixes) => share({ kind: "collection", title: collection.name, mixes })}
                     onManageCollection={() => setDialog({ type: "collection", collection: selectedCollection })}
                   />
                 )}
               />
             ))}
+            <Route path="/recipes" element={<RecipesPage archive={archive} shelf={shelf} errors={accountBanner} notice={notice} showNotice={showNotice} />} />
+            <Route path="/projects" element={<ProjectsPage archive={archive} errors={accountBanner} notice={notice} showNotice={showNotice} />} />
+            <Route path="/projects/:projectId" element={<ProjectPage archive={archive} shelf={shelf} errors={accountBanner} notice={notice} showNotice={showNotice} />} />
+            <Route path="/paints" element={<PaintsPage tab="shelf" archive={archive} errors={accountBanner} notice={notice} showNotice={showNotice} />} />
+            <Route path="/paints/shopping" element={<PaintsPage tab="shopping" archive={archive} errors={accountBanner} notice={notice} showNotice={showNotice} />} />
             <Route
               path="/profile"
               element={!auth.ready ? null : auth.user ? (
@@ -311,7 +363,10 @@ export default function App() {
       </main>
 
       {dialog?.type === "mix" && (
-        <MixForm mix={dialog.mix} busy={busy} saveError={dialogError} onSave={saveMix} onClose={() => { if (!busy) closeDialog(); }} />
+        <MixForm mix={dialog.mix} ownedPaints={archive.paints} busy={busy} saveError={dialogError} onSave={saveMix} onClose={() => { if (!busy) closeDialog(); }} />
+      )}
+      {dialog?.type === "match" && (
+        <MatchDialog mixes={archive.mixes} onOpenMix={openMixForm} onClose={closeDialog} />
       )}
       {dialog?.type === "collection" && (
         <CollectionForm
@@ -350,7 +405,8 @@ export default function App() {
           title="Import this backup?"
           description={(
             <>
-              It contains <strong>{plural(dialog.archive.mixes.length, "mix", "mixes")}</strong> and <strong>{plural(dialog.archive.collections.length, "collection")}</strong>.
+              It contains <strong>{plural(dialog.archive.mixes.length, "mix", "mixes")}</strong> and <strong>{plural(dialog.archive.collections.length, "collection")}</strong>
+              {describeOther(dialog.archive) && <>, plus <strong>{describeOther(dialog.archive)}</strong></>}.
               {" "}Add them to your archive, or replace everything {signedIn ? "in your account" : "in this browser"} with the backup.
             </>
           )}

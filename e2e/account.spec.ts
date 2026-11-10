@@ -144,3 +144,15 @@ test.describe("signed in (mocked account)", () => {
     await expect(page.getByRole("dialog")).toHaveCount(0);
   });
 });
+
+test("an account whose database hasn't had the update yet still loads its mixes, with a clear note", async ({ browser, baseURL }) => {
+  const context = await browser.newContext({ baseURL });
+  await mockSignedIn(context, { missingWorkshopTables: true });
+  const page = await context.newPage();
+  await page.goto("/");
+  await expect(page.locator(".mix-card")).toHaveCount(14);
+  await expect(page.getByText("need a database update")).toBeVisible();
+  await page.goto("/recipes");
+  await expect(page.getByText("Write down your first scheme")).toBeVisible();
+  await context.close();
+});

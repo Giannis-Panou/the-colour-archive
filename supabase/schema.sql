@@ -170,3 +170,100 @@ create policy "Share photos: owner deletes" on storage.objects for delete to aut
   bucket_id = 'share-photos'
   and exists (select 1 from public.shares s where s.id = (storage.foldername(name))[1] and s.user_id = (select auth.uid()))
 );
+
+-- ---------- Workshop: favourites, My paints, recipes and projects ----------
+-- Added with recipes, projects and the shopping list. Safe to run on a database that already has
+-- everything above: it only adds what's missing.
+
+alter table public.mixes add column if not exists favorite boolean not null default false;
+
+-- The paints someone owns ("have", "low") or wants ("want"). One entry per brand and name.
+create table if not exists public.paints (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  name        text not null check (char_length(btrim(name)) between 1 and 50),
+  brand       text not null default '' check (char_length(brand) <= 40),
+  swatch      text not null check (swatch ~ '^#[0-9a-fA-F]{6}$'),
+  status      text not null default 'have' check (status in ('have', 'low', 'want')),
+  created_at  timestamptz not null default now()
+);
+create unique index if not exists paints_user_brand_name_idx on public.paints (user_id, lower(btrim(brand)), lower(btrim(name)));
+
+-- A paint scheme. steps: [{ "role": "Base", "mixId": "<mix id>" | null, "paint": "Nuln Oil", "note": "" }, ...]
+create table if not exists public.recipes (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  name        text not null check (char_length(name) between 1 and 70),
+  notes       text not null default '' check (char_length(notes) <= 500),
+  steps       jsonb not null default '[]'::jsonb check (
+    jsonb_typeof(steps) = 'array' and jsonb_array_length(steps) <= 30 and octet_length(steps::text) <= 20000
+  ),
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+create index if not exists recipes_user_id_idx on public.recipes (user_id);
+
+-- True when every photo in a project's list is stored in its owner's own folder.
+create or replace function public.photos_in_own_folder(photos jsonb, owner uuid) returns boolean
+language sql immutable set search_path = '' as $$
+  select coalesce(bool_and(photo ->> 'path' like owner::text || '/%'), true)
+  from jsonb_array_elements(photos) as photo;
+$$;
+
+-- A model or army. photos: [{ "id": "...", "path": "<user id>/project-<id>-....jpg", "caption": "", "added_at": "..." }]
+create table if not exists public.projects (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  name        text not null check (char_length(name) between 1 and 70),
+  notes       text not null default '' check (char_length(notes) <= 500),
+  recipe_ids  jsonb not null default '[]'::jsonb check (jsonb_typeof(recipe_ids) = 'array' and jsonb_array_length(recipe_ids) <= 200),
+  mix_ids     jsonb not null default '[]'::jsonb check (jsonb_typeof(mix_ids) = 'array' and jsonb_array_length(mix_ids) <= 500),
+  photos      jsonb not null default '[]'::jsonb check (jsonb_typeof(photos) = 'array' and jsonb_array_length(photos) <= 12),
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  constraint projects_photos_own_folder check (public.photos_in_own_folder(photos, user_id))
+);
+create index if not exists projects_user_id_idx on public.projects (user_id);
+
+drop trigger if exists recipes_set_updated_at on public.recipes;
+create trigger recipes_set_updated_at before update on public.recipes
+  for each row execute function public.set_updated_at();
+drop trigger if exists projects_set_updated_at on public.projects;
+create trigger projects_set_updated_at before update on public.projects
+  for each row execute function public.set_updated_at();
+
+grant select, insert, update, delete on public.paints, public.recipes, public.projects to authenticated;
+revoke all on public.paints, public.recipes, public.projects from anon;
+alter table public.paints enable row level security;
+alter table public.recipes enable row level security;
+alter table public.projects enable row level security;
+
+drop policy if exists "Own paints: read" on public.paints;
+drop policy if exists "Own paints: add" on public.paints;
+drop policy if exists "Own paints: edit" on public.paints;
+drop policy if exists "Own paints: delete" on public.paints;
+create policy "Own paints: read" on public.paints for select to authenticated using ((select auth.uid()) = user_id);
+create policy "Own paints: add" on public.paints for insert to authenticated with check ((select auth.uid()) = user_id);
+create policy "Own paints: edit" on public.paints for update to authenticated
+  using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
+create policy "Own paints: delete" on public.paints for delete to authenticated using ((select auth.uid()) = user_id);
+
+drop policy if exists "Own recipes: read" on public.recipes;
+drop policy if exists "Own recipes: add" on public.recipes;
+drop policy if exists "Own recipes: edit" on public.recipes;
+drop policy if exists "Own recipes: delete" on public.recipes;
+create policy "Own recipes: read" on public.recipes for select to authenticated using ((select auth.uid()) = user_id);
+create policy "Own recipes: add" on public.recipes for insert to authenticated with check ((select auth.uid()) = user_id);
+create policy "Own recipes: edit" on public.recipes for update to authenticated
+  using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
+create policy "Own recipes: delete" on public.recipes for delete to authenticated using ((select auth.uid()) = user_id);
+
+drop policy if exists "Own projects: read" on public.projects;
+drop policy if exists "Own projects: add" on public.projects;
+drop policy if exists "Own projects: edit" on public.projects;
+drop policy if exists "Own projects: delete" on public.projects;
+create policy "Own projects: read" on public.projects for select to authenticated using ((select auth.uid()) = user_id);
+create policy "Own projects: add" on public.projects for insert to authenticated with check ((select auth.uid()) = user_id);
+create policy "Own projects: edit" on public.projects for update to authenticated
+  using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
+create policy "Own projects: delete" on public.projects for delete to authenticated using ((select auth.uid()) = user_id);

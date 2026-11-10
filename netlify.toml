@@ -5,14 +5,28 @@
 # Security headers for every page.
 # The CSP allows only this site's own scripts, Google Fonts, and the Supabase project
 # (data, photo links and sign-in). Inline styles are needed for React's style attributes.
+# connect-src lists Google Fonts because the service worker fetches them to keep them offline;
+# worker-src and manifest-src fall back to 'self'.
 [[headers]]
   for = "/*"
   [headers.values]
-    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://sknomfblienlqzkqlzqp.supabase.co; connect-src 'self' data: https://sknomfblienlqzkqlzqp.supabase.co wss://sknomfblienlqzkqlzqp.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://sknomfblienlqzkqlzqp.supabase.co; connect-src 'self' data: https://sknomfblienlqzkqlzqp.supabase.co wss://sknomfblienlqzkqlzqp.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+
+# The service worker must always be checked for updates, or a release could wait days to arrive.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+# Built files have the release in their names, so browsers can keep them for good.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
 
 [[redirects]]
   from = "/*"

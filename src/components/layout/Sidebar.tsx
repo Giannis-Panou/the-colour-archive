@@ -1,11 +1,13 @@
-import { ChevronDown, Folder, FolderPlus, Layers3, Trash2 } from "lucide-react";
-import { Link } from "react-router";
+import { BookOpen, ChevronDown, Folder, FolderPlus, Hammer, Layers3, Palette, PaintBucket, Trash2 } from "lucide-react";
+import { Link, NavLink } from "react-router";
 import type { Collection, Mix } from "../../types";
 
 interface SidebarProps {
   collections: Collection[];
   mixes: Mix[];
   selectedCollectionId: string | null;
+  /** Shown on My paints: how many things are on the shopping list. */
+  shoppingCount: number;
   /** On narrow screens the collections list is a drawer. */
   expanded: boolean;
   onToggleExpanded: () => void;
@@ -15,7 +17,14 @@ interface SidebarProps {
   onDeleteCollection: (collection: Collection) => void;
 }
 
-export function Sidebar({ collections, mixes, selectedCollectionId, expanded, onToggleExpanded, onNavigate, onAddCollection, onDeleteCollection }: SidebarProps) {
+const WORKSHOP = [
+  { to: "/", label: "Mixes", icon: Palette, end: true },
+  { to: "/recipes", label: "Recipes", icon: BookOpen, end: false },
+  { to: "/projects", label: "Projects", icon: Hammer, end: false },
+  { to: "/paints", label: "My paints", icon: PaintBucket, end: false },
+];
+
+export function Sidebar({ collections, mixes, selectedCollectionId, shoppingCount, expanded, onToggleExpanded, onNavigate, onAddCollection, onDeleteCollection }: SidebarProps) {
   const mixIds = new Set(mixes.map((mix) => mix.id));
 
   return (
@@ -24,6 +33,28 @@ export function Sidebar({ collections, mixes, selectedCollectionId, expanded, on
         <span className="brand-mark" aria-hidden="true"><Layers3 size={21} strokeWidth={2.2} /></span>
         <span className="brand-name">the colour<br />archive</span>
       </Link>
+
+      <nav className="workshop-nav" aria-label="Workshop">
+        <div className="sidebar-section-label">WORKSHOP</div>
+        {WORKSHOP.map(({ to, label, icon: Icon, end }) => (
+          <NavLink
+            key={to}
+            to={to}
+            end={end}
+            onClick={onNavigate}
+            title={label}
+            className={({ isActive }) => `nav-item workshop-item ${isActive ? "active" : ""}`}
+          >
+            <Icon size={17} />
+            <span className="workshop-label">{label}</span>
+            {to === "/paints" && shoppingCount > 0 && (
+              <span className="nav-count shopping-count" title={`${shoppingCount} on your shopping list`}>
+                {shoppingCount}<span className="sr-only"> on your shopping list</span>
+              </span>
+            )}
+          </NavLink>
+        ))}
+      </nav>
 
       <div className="collections-section">
         <div className="collections-desktop-label">COLLECTIONS</div>

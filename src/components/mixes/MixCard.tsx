@@ -1,6 +1,7 @@
-import { Pencil, Share2, Trash2 } from "lucide-react";
+import { Pencil, Share2, Star, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { Mix } from "../../types";
+import type { PaintShelf } from "../../lib/paints";
 import { MixSwatch } from "./MixSwatch";
 import { PaintList } from "./PaintList";
 
@@ -8,26 +9,39 @@ const dateFormat = new Intl.DateTimeFormat("en", { day: "numeric", month: "short
 
 interface MixCardProps {
   mix: Mix;
+  /** My paints, to mark paints the mix needs that aren't owned. */
+  shelf?: PaintShelf;
   onShare: (mix: Mix) => void;
   onEdit: (mix: Mix) => void;
   onDelete: (mix: Mix) => void;
+  onToggleFavorite: (mix: Mix) => void;
 }
 
-export function MixCard({ mix, onShare, onEdit, onDelete }: MixCardProps) {
+export function MixCard({ mix, shelf, onShare, onEdit, onDelete, onToggleFavorite }: MixCardProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const totalDrops = mix.paints.reduce((total, paint) => total + Number(paint.drops), 0);
+  const favoriteLabel = mix.favorite ? `Remove ${mix.name} from favourites` : `Add ${mix.name} to favourites`;
 
   return (
-    <article className="mix-card">
+    <article className={`mix-card ${mix.favorite ? "favorite" : ""}`}>
       <MixSwatch mix={mix} className="mix-image">
         <div className="mix-card-actions">
+          <button
+            className={`favorite-button ${mix.favorite ? "on" : ""}`}
+            onClick={() => onToggleFavorite(mix)}
+            aria-label={favoriteLabel}
+            aria-pressed={Boolean(mix.favorite)}
+            title={favoriteLabel}
+          >
+            <Star size={15} fill={mix.favorite ? "currentColor" : "none"} />
+          </button>
           <button className="share-button" onClick={() => onShare(mix)} aria-label={`Share ${mix.name}`} title={`Share ${mix.name}`}><Share2 size={15} /></button>
           <button className="edit-button" onClick={() => onEdit(mix)} aria-label={`Edit ${mix.name}`} title={`Edit ${mix.name}`}><Pencil size={15} /></button>
           <button className="delete-button" onClick={() => setConfirmDelete(true)} aria-label={`Delete ${mix.name}`} title={`Delete ${mix.name}`}><Trash2 size={15} /></button>
         </div>
       </MixSwatch>
       <div className="mix-card-body">
-        <PaintList mix={mix} />
+        <PaintList mix={mix} shelf={shelf} />
         <div className="mix-card-footer">
           <span>{mix.notes ? mix.notes : `${totalDrops} ${totalDrops === 1 ? "drop" : "drops"} in this mix`}</span>
           <time dateTime={mix.createdAt}>{dateFormat.format(new Date(mix.createdAt))}</time>

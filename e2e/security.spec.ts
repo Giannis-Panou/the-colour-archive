@@ -8,7 +8,10 @@ import { disableShareSheet, tempFile, TWO_TONE } from "./support";
 
 function netlifyHeaders(): Record<string, string> {
   const toml = fs.readFileSync(path.join(import.meta.dirname, "..", "netlify.toml"), "utf8");
-  const block = toml.slice(toml.indexOf("[headers.values]"));
+  // The first [[headers]] block is the one for every page ("/*"); later blocks cover single paths.
+  const start = toml.indexOf("[headers.values]");
+  const end = toml.indexOf("[[", start);
+  const block = toml.slice(start, end === -1 ? undefined : end);
   return Object.fromEntries([...block.matchAll(/^\s*([A-Za-z-]+)\s*=\s*"([^"]*)"/gm)].map((match) => [match[1], match[2]]));
 }
 const HEADERS = netlifyHeaders();
@@ -27,7 +30,9 @@ const shareUrl = (payload: unknown) => `/#share=${encodeURIComponent(JSON.string
 
 let context: BrowserContext;
 test.beforeEach(async ({ browser, baseURL }) => {
-  context = await browser.newContext({ baseURL, acceptDownloads: true, permissions: ["clipboard-read", "clipboard-write"] });
+  // Requests a service worker makes can't be routed, so it's blocked here to keep the headers on
+  // every response. The offline tests at the end run with it allowed.
+  context = await browser.newContext({ baseURL, acceptDownloads: true, permissions: ["clipboard-read", "clipboard-write"], serviceWorkers: "block" });
   await context.route(`${baseURL}/**`, async (route) => {
     const response = await route.fetch();
     await route.fulfill({ response, headers: { ...response.headers(), ...HEADERS } });
@@ -122,6 +127,33 @@ test("a backup full of script and __proto__ keys imports as plain data", async (
   expect(await inspect(page)).toMatchObject({ xss: undefined, injectedNodes: 0, polluted: undefined });
 });
 
+test("script in recipes, projects and paints from a backup shows as text and never runs", async () => {
+  const date = "2026-11-01T10:00:00.000Z";
+  const mix = { ...evilMix(0), id: "00000000-0000-4000-8000-000000000010", createdAt: date };
+  const file = tempFile("evil-workshop.json", JSON.stringify({
+    app: "the-colour-archive",
+    version: 2,
+    mixes: [mix],
+    collections: [],
+    recipes: [{ id: "r-evil", name: XSS[1], notes: XSS[2], createdAt: date, steps: [
+      { role: XSS[3], mixId: mix.id, paint: "", note: XSS[0] },
+      { role: "Base", mixId: null, paint: XSS[2], note: "" },
+    ] }],
+    projects: [{ id: "p-evil", name: XSS[0], notes: XSS[1], createdAt: date, recipeIds: ["r-evil"], mixIds: [mix.id], photos: [] }],
+    paints: [{ id: "pa-evil", name: XSS[3], brand: XSS[0], swatch: "#123456", status: "low", createdAt: date }],
+  }));
+  const page = await open();
+  await page.locator('input[type="file"][accept*="json"]').setInputFiles(file);
+  await page.getByRole("button", { name: "Add to archive" }).click();
+  await expect(page.getByText("Imported 1 mix")).toBeVisible();
+  for (const path of ["/recipes", "/projects", "/projects/p-evil", "/paints", "/paints/shopping"]) {
+    await page.goto(path);
+    await expect(page.locator("h1")).toBeVisible();
+    expect(await inspect(page), path).toMatchObject({ xss: undefined, injectedNodes: 0, violations: [] });
+  }
+  await expect(page.getByText(XSS[3]).first()).toBeVisible();
+});
+
 test("a file over 50 MB is refused before it is read", async () => {
   const file = tempFile("huge.json", Buffer.alloc(51 * 1024 * 1024, 32));
   const page = await open();
@@ -167,4 +199,45 @@ test("another site can't show the app in a frame", async ({ baseURL }) => {
   const frame = page.frames().find((candidate) => candidate.url().startsWith(baseURL!));
   const rendered = frame ? await frame.evaluate(() => Boolean(document.querySelector(".app-shell"))).catch(() => false) : false;
   expect(rendered).toBe(false);
+});
+
+// ---------- Installable app ----------
+
+test("the web app manifest and its icons are served", async ({ request }) => {
+  const manifest = await (await request.get("/manifest.webmanifest")).json();
+  expect(manifest).toMatchObject({ name: "The Colour Archive", start_url: "/", display: "standalone" });
+  expect(manifest.icons.map((icon: { sizes: string }) => icon.sizes)).toEqual(expect.arrayContaining(["192x192", "512x512"]));
+  expect(manifest.icons.some((icon: { purpose: string }) => icon.purpose === "maskable")).toBe(true);
+  for (const icon of manifest.icons) {
+    const response = await request.get(icon.src);
+    expect(response.ok(), icon.src).toBe(true);
+    expect(response.headers()["content-type"], icon.src).toContain(icon.type);
+  }
+  const page = await open();
+  expect(await page.locator('link[rel="manifest"]').getAttribute("href")).toBe("/manifest.webmanifest");
+});
+
+test("once installed, the app opens offline with the archive saved in the browser", async ({ browser, baseURL }) => {
+  const offline = await browser.newContext({ baseURL, serviceWorkers: "allow" });
+  try {
+    const page = await offline.newPage();
+    await page.goto("/");
+    // Wait until the service worker controls the page, then save a mix to this browser.
+    await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+    await page.reload();
+    await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
+    await page.evaluate(() => localStorage.setItem("the-colour-archive-mixes", JSON.stringify([{
+      id: "offline-mix", createdAt: "2026-11-01T10:00:00.000Z", name: "Offline ochre", color: "#b5852f", notes: "", image: "",
+      paints: [{ name: "Ochre", brand: "Vallejo", drops: "2", swatch: "#b5852f" }],
+    }])));
+
+    await offline.setOffline(true);
+    await page.reload();
+    await expect(page.locator(".mix-card h3")).toHaveText("Offline ochre");
+    // Other pages open offline too: every route is the same app.
+    await page.goto("/recipes");
+    await expect(page.locator("h1")).toContainText("Recipes");
+  } finally {
+    await offline.close();
+  }
 });

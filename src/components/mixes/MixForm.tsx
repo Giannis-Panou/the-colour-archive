@@ -1,16 +1,18 @@
 import { Check, ChevronDown, ImagePlus, LoaderCircle, Plus, X } from "lucide-react";
-import { useCallback, useRef, useState, type ChangeEvent, type FormEvent } from "react";
-import type { Mix, MixInput, Paint } from "../../types";
+import { useCallback, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import type { Mix, MixInput, OwnedPaint, Paint } from "../../types";
 import { preparePhoto } from "../../lib/images";
+import { DEFAULT_BRANDS } from "../../lib/paints";
 import { Modal } from "../Modal";
 import { ColorSampler } from "./ColorSampler";
 
-const BRANDS = ["The Army Painter", "Citadel", "Vallejo", "AK Interactive", "Other"];
 const NEW_PAINT: Paint = { name: "", brand: "The Army Painter", drops: "1", swatch: "#8593aa" };
 
 interface MixFormProps {
   /** The mix to edit, or null for a new one. */
   mix: Mix | null;
+  /** My paints: suggested as paint names, and used to fill in the brand. */
+  ownedPaints: OwnedPaint[];
   busy: boolean;
   /** An error from saving, shown inside the form. */
   saveError: string;
@@ -18,7 +20,7 @@ interface MixFormProps {
   onClose: () => void;
 }
 
-export function MixForm({ mix, busy, saveError, onSave, onClose }: MixFormProps) {
+export function MixForm({ mix, ownedPaints, busy, saveError, onSave, onClose }: MixFormProps) {
   const [name, setName] = useState(mix?.name || "");
   const [color, setColor] = useState(mix?.color || "#7187a1");
   const [notes, setNotes] = useState(mix?.notes || "");
@@ -29,8 +31,26 @@ export function MixForm({ mix, busy, saveError, onSave, onClose }: MixFormProps)
   const fileInput = useRef<HTMLInputElement>(null);
   const showError = useCallback((message: string) => setError(message), []);
 
+  // Brands offered: the usual ones, any on My paints, and any this mix already uses.
+  const brands = useMemo(() => [...new Set([
+    ...DEFAULT_BRANDS.filter((brand) => brand !== "Other"),
+    ...ownedPaints.map((paint) => paint.brand.trim()).filter(Boolean),
+    ...(mix?.paints.map((paint) => paint.brand) || []),
+    "Other",
+  ])], [ownedPaints, mix]);
+  const suggestions = useMemo(() => [...ownedPaints].sort((a, b) => a.name.localeCompare(b.name)), [ownedPaints]);
+
   function updatePaint(index: number, key: keyof Paint, value: string) {
     setPaints((current) => current.map((paint, paintIndex) => (paintIndex === index ? { ...paint, [key]: value } : paint)));
+  }
+
+  /** Typing or picking a paint from My paints fills in its brand and swatch. */
+  function updatePaintName(index: number, value: string) {
+    const matches = ownedPaints.filter((paint) => paint.name.trim().toLowerCase() === value.trim().toLowerCase());
+    const match = matches.length === 1 ? matches[0] : null;
+    setPaints((current) => current.map((paint, paintIndex) => (paintIndex === index
+      ? { ...paint, name: value, ...(match ? { brand: match.brand, swatch: match.swatch } : {}) }
+      : paint)));
   }
 
   async function handleImage(event: ChangeEvent<HTMLInputElement>) {
@@ -90,15 +110,20 @@ export function MixForm({ mix, busy, saveError, onSave, onClose }: MixFormProps)
             {paints.map((paint, index) => (
               <div className="ingredient-row" key={index}>
                 <span className="ingredient-index">{String(index + 1).padStart(2, "0")}</span>
-                <label className="ingredient-input paint-field"><span className="sr-only">Paint name</span><input value={paint.name} onChange={(event) => updatePaint(index, "name", event.target.value)} placeholder="Paint name" maxLength={50} /></label>
+                <label className="ingredient-input paint-field"><span className="sr-only">Paint name</span><input value={paint.name} onChange={(event) => updatePaintName(index, event.target.value)} placeholder="Paint name" maxLength={50} list={suggestions.length ? "owned-paint-names" : undefined} autoComplete="off" /></label>
                 <label className="ingredient-input brand-field"><span className="sr-only">Paint brand</span>
-                  <select value={paint.brand} onChange={(event) => updatePaint(index, "brand", event.target.value)}>{BRANDS.map((brand) => <option key={brand}>{brand}</option>)}</select>
+                  <select value={paint.brand} onChange={(event) => updatePaint(index, "brand", event.target.value)}>{brands.map((brand) => <option key={brand}>{brand}</option>)}</select>
                   <ChevronDown size={15} className="select-chevron" aria-hidden="true" />
                 </label>
                 <label className="ingredient-input drops-field"><span className="sr-only">Number of drops</span><input type="number" min="1" step="1" value={paint.drops} onChange={(event) => updatePaint(index, "drops", event.target.value)} /><small>drops</small></label>
               </div>
             ))}
           </div>
+          {suggestions.length > 0 && (
+            <datalist id="owned-paint-names">
+              {suggestions.map((paint) => <option key={paint.id} value={paint.name}>{paint.brand}</option>)}
+            </datalist>
+          )}
           <button className="add-paint-button" type="button" onClick={() => setPaints((current) => [...current, { ...NEW_PAINT, swatch: "#ad8064" }])}><Plus size={15} /> Add another paint</button>
 
           <div className="form-lower-grid">

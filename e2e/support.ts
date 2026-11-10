@@ -111,7 +111,8 @@ export const mockUser = {
   app_metadata: { provider: "email", providers: ["email"] }, user_metadata: {} as Record<string, unknown>, identities: [],
 };
 
-export async function mockSignedIn(context: BrowserContext) {
+/** Signs in a fake account whose Supabase calls are answered locally. `missingWorkshopTables` mimics a database without the recipes, projects and paints tables. */
+export async function mockSignedIn(context: BrowserContext, options: { missingWorkshopTables?: boolean } = {}) {
   const user = structuredClone(mockUser);
   const part = (value: object) => Buffer.from(JSON.stringify(value)).toString("base64url");
   const expiresAt = Math.floor(Date.now() / 1000) + 3600;
@@ -127,6 +128,11 @@ export async function mockSignedIn(context: BrowserContext) {
     if (pathname === "/rest/v1/mixes") return route.fulfill(json(sample.mixes.map((mix) => ({ id: mix.id, user_id: user.id, name: mix.name, color: mix.color, notes: mix.notes, paints: mix.paints, image_path: null, created_at: mix.createdAt }))));
     if (pathname === "/rest/v1/collections") return route.fulfill(json(sample.collections.map((collection) => ({ id: collection.id, user_id: user.id, name: collection.name, created_at: collection.createdAt }))));
     if (pathname === "/rest/v1/collection_mixes") return route.fulfill(json(sample.collections.flatMap((collection) => collection.mixIds.map((id) => ({ collection_id: collection.id, mix_id: id, added_at: collection.createdAt })))));
+    if (["/rest/v1/recipes", "/rest/v1/projects", "/rest/v1/paints"].includes(pathname)) {
+      // A database that hasn't had the schema update yet answers like PostgREST does for a missing table.
+      if (options.missingWorkshopTables) return route.fulfill(json({ code: "PGRST205", message: `Could not find the table 'public.${pathname.split("/").pop()}' in the schema cache` }, 404));
+      return route.fulfill(json([]));
+    }
     if (pathname === "/auth/v1/user" && method === "PUT") {
       const body = route.request().postDataJSON() as { data?: Record<string, unknown> };
       updates.push(body);
@@ -177,4 +183,6 @@ export async function cleanUpLiveUser(user: LiveUser | undefined) {
   await remove("mix-photos", (Array.isArray(photos) ? photos : []).map((file) => `${user.id}/${file.name}`));
   await rest(`collections?user_id=eq.${user.id}`, { method: "DELETE" });
   await rest(`mixes?user_id=eq.${user.id}`, { method: "DELETE" });
+  // Added with the workshop schema update; on an older database these just return an error.
+  for (const table of ["projects", "recipes", "paints"]) await rest(`${table}?user_id=eq.${user.id}`, { method: "DELETE" });
 }

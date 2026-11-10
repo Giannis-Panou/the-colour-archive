@@ -87,11 +87,14 @@ test("search covers names, notes, paints and brands", async () => {
   await expect(page.locator(".mix-card")).toHaveCount(3);
 });
 
-test("sort switches between newest first and name A–Z", async () => {
+test("sort orders by newest, oldest, name and colour", async () => {
+  const sort = page.getByLabel("Sort mixes");
   await expect(page.locator(".mix-card h3").first()).toHaveText("Bone white");
-  await page.getByRole("button", { name: /Newest first/ }).click();
+  await sort.selectOption({ label: "Name A–Z" });
   await expect(page.locator(".mix-card h3")).toHaveText(["Autumn rust", "Bone white", "Stormy blue"]);
-  await page.getByRole("button", { name: /Name A–Z/ }).click();
+  await sort.selectOption({ label: "Oldest first" });
+  await expect(page.locator(".mix-card h3")).toHaveText(["Stormy blue", "Autumn rust", "Bone white"]);
+  await sort.selectOption({ label: "Newest first" });
 });
 
 test("editing a mix keeps its id and date", async () => {
@@ -268,7 +271,7 @@ test("Export downloads a complete backup", async () => {
   await download.saveAs(backupFile);
   const data = JSON.parse(fs.readFileSync(backupFile, "utf8"));
   const current = await stored(page);
-  expect(data).toMatchObject({ app: "the-colour-archive", version: 1 });
+  expect(data).toMatchObject({ app: "the-colour-archive", version: 2 });
   expect(data.mixes).toHaveLength(current.mixes.length);
   expect(data.collections).toHaveLength(current.collections.length);
   expect(download.suggestedFilename()).toMatch(/^colour-archive-\d{4}-\d{2}-\d{2}\.json$/);

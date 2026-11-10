@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MixInput } from "../../types";
-import { COLLECTIONS_KEY, localStore, MIXES_KEY, readLocalArchive, RECOVERY_KEY } from "./localStore";
+import { completeArchive } from "../archive";
+import { COLLECTIONS_KEY, localStore, MIXES_KEY, PAINTS_KEY, PROJECTS_KEY, readLocalArchive, RECIPES_KEY, RECOVERY_KEY } from "./localStore";
 
 const recipe: MixInput = { name: "Mossy stone", color: "#5d6b3c", notes: "", image: "", paints: [{ name: "Greenskin", brand: "The Army Painter", drops: "3", swatch: "#2c6e3a" }] };
-const stored = () => ({ mixes: JSON.parse(localStorage.getItem(MIXES_KEY) || "[]"), collections: JSON.parse(localStorage.getItem(COLLECTIONS_KEY) || "[]") });
+const read = (key: string) => JSON.parse(localStorage.getItem(key) || "[]");
+const stored = () => ({ mixes: read(MIXES_KEY), collections: read(COLLECTIONS_KEY) });
+const PHOTO = "data:image/png;base64,iVBORw0KGgo=";
+const date = "2026-11-01T10:00:00.000Z";
 
 beforeEach(() => {
   localStorage.clear();
@@ -23,24 +27,77 @@ describe("localStore", () => {
     expect(stored().collections[0]).toMatchObject({ id: collection.id, mixIds: [] });
   });
 
+  it("stars a mix, and editing it keeps the star", async () => {
+    const created = await localStore.saveMix(recipe, null);
+    const starred = await localStore.setFavorite(created, true);
+    expect(starred.favorite).toBe(true);
+    await localStore.saveMix({ ...recipe, name: "Renamed" }, starred);
+    expect(readLocalArchive().archive.mixes[0]).toMatchObject({ name: "Renamed", favorite: true });
+  });
+
+  it("saves, edits and deletes recipes and paints", async () => {
+    const mix = await localStore.saveMix(recipe, null);
+    const saved = await localStore.saveRecipe({ name: "Moss", notes: "", steps: [{ role: "Base", mixId: mix.id, paint: "", note: "" }] }, null);
+    await localStore.saveRecipe({ ...saved, name: "Moss v2" }, saved);
+    expect(read(RECIPES_KEY)).toEqual([expect.objectContaining({ id: saved.id, name: "Moss v2" })]);
+
+    const paint = await localStore.savePaint({ name: "Greenskin", brand: "The Army Painter", swatch: "#2c6e3a", status: "have" }, null);
+    await localStore.savePaint({ ...paint, status: "low" }, paint);
+    expect(read(PAINTS_KEY)).toEqual([expect.objectContaining({ id: paint.id, status: "low" })]);
+
+    await localStore.deleteRecipe(saved.id);
+    await localStore.deletePaint(paint.id);
+    expect(readLocalArchive().archive).toMatchObject({ recipes: [], paints: [] });
+  });
+
+  it("keeps a project's photos when its details change", async () => {
+    const project = await localStore.saveProject({ name: "Skeletons", notes: "", recipeIds: [], mixIds: [] }, null);
+    const withPhoto = await localStore.addProjectPhoto(project, PHOTO, "Primed");
+    // The details form passes the project as it was opened, before the photo was added.
+    await localStore.saveProject({ name: "Skeleton horde", notes: "", recipeIds: [], mixIds: [] }, project);
+    const [saved] = read(PROJECTS_KEY);
+    expect(saved).toMatchObject({ name: "Skeleton horde", photos: [{ caption: "Primed", image: PHOTO }] });
+    const without = await localStore.removeProjectPhoto(withPhoto, withPhoto.photos[0].id);
+    expect(without.photos).toEqual([]);
+  });
+
   it("merges a backup, skipping known mixes and renaming clashing collections", async () => {
     const mine = await localStore.saveMix(recipe, null);
     await localStore.saveCollection({ name: "Bases", mixIds: [] }, null);
-    const incoming = {
-      mixes: [mine, { ...recipe, id: "new", createdAt: "2026-11-01T10:00:00.000Z" }],
+    const incoming = completeArchive({
+      mixes: [mine, { ...recipe, id: "new", createdAt: date }],
       collections: [{ id: "other", name: "bases", mixIds: ["new", "missing"] }],
-    };
+    });
     const result = await localStore.importArchive(incoming, { mode: "merge", label: "imported" });
     expect(result).toMatchObject({ addedMixes: 1, skippedMixes: 1, addedCollections: 1 });
     expect(result.archive.collections.map((collection) => collection.name)).toEqual(["Bases", "bases (imported)"]);
     expect(result.archive.collections[1].mixIds).toEqual(["new"]);
   });
 
+  it("merges recipes, projects and paints, skipping paints already on the list", async () => {
+    await localStore.savePaint({ name: "Greenskin", brand: "The Army Painter", swatch: "#2c6e3a", status: "have" }, null);
+    const incoming = completeArchive({
+      recipes: [{ id: "r1", name: "Moss", notes: "", createdAt: date, steps: [] }],
+      projects: [{ id: "p1", name: "Orcs", notes: "", createdAt: date, recipeIds: ["r1"], mixIds: [], photos: [] }],
+      paints: [
+        { id: "x1", name: "greenskin", brand: "the army painter", swatch: "#000000", status: "want", createdAt: date },
+        { id: "x2", name: "Kraken Ink", brand: "The Army Painter", swatch: "#2f4a5f", status: "have", createdAt: date },
+      ],
+    });
+    const result = await localStore.importArchive(incoming, { mode: "merge", label: "imported" });
+    expect(result.addedOther).toBe(3);
+    expect(result.archive.paints.map((paint) => paint.name)).toEqual(["Greenskin", "Kraken Ink"]);
+    // Importing the same file again adds nothing.
+    expect((await localStore.importArchive(incoming, { mode: "merge", label: "imported" })).addedOther).toBe(0);
+  });
+
   it("replaces the archive with a backup", async () => {
     await localStore.saveMix(recipe, null);
-    const result = await localStore.importArchive({ mixes: [], collections: [{ id: "c", name: "Empty", mixIds: ["gone"] }] }, { mode: "replace", label: "imported" });
+    await localStore.saveRecipe({ name: "Moss", notes: "", steps: [] }, null);
+    const result = await localStore.importArchive(completeArchive({ collections: [{ id: "c", name: "Empty", mixIds: ["gone"] }] }), { mode: "replace", label: "imported" });
     expect(result.archive.mixes).toHaveLength(0);
     expect(stored().collections[0].mixIds).toEqual([]);
+    expect(read(RECIPES_KEY)).toEqual([]);
   });
 
   it("keeps damaged entries in a recovery copy and reports them", () => {
@@ -49,6 +106,15 @@ describe("localStore", () => {
     expect(archive.mixes).toHaveLength(1);
     expect(warning).toContain("1 saved mix was damaged");
     expect(localStorage.getItem(RECOVERY_KEY)).toContain('"name":5');
+  });
+
+  it("skips damaged recipes, projects and paints without losing the rest", () => {
+    localStorage.setItem(PAINTS_KEY, JSON.stringify([{ id: "a", name: "Ok", brand: "", swatch: "#112233", status: "have", createdAt: date }, { id: "b", name: "Bad", status: "stolen" }]));
+    localStorage.setItem(PROJECTS_KEY, "not json");
+    const { archive, warning } = readLocalArchive();
+    expect(archive.paints.map((paint) => paint.id)).toEqual(["a"]);
+    expect(archive.projects).toEqual([]);
+    expect(warning).toContain("projects could not be loaded");
   });
 
   it("rolls both lists back when storage is full", async () => {

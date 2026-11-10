@@ -1,6 +1,13 @@
-import { Download, LogIn, PanelLeftClose, PanelLeftOpen, Upload } from "lucide-react";
+import { Download, LogIn, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Sun, Upload } from "lucide-react";
 import { useRef, type ChangeEvent } from "react";
 import { Link } from "react-router";
+import type { ThemeChoice } from "../../hooks/useTheme";
+
+const THEME_LABELS: Record<ThemeChoice, { label: string; next: string }> = {
+  system: { label: "Theme: matches your device", next: "light" },
+  light: { label: "Theme: light", next: "dark" },
+  dark: { label: "Theme: dark", next: "your device's setting" },
+};
 
 interface TopbarProps {
   /** Shown after "My archive /" when inside a collection or the profile; null on the archive itself. */
@@ -14,9 +21,13 @@ interface TopbarProps {
   /** False when accounts aren't configured, which hides Sign in. */
   accountsEnabled: boolean;
   onSignIn: () => void;
+  theme: ThemeChoice;
+  onCycleTheme: () => void;
 }
 
-export function Topbar({ sectionTitle, sidebarOpen, onToggleSidebar, canExport, onExport, onImportFile, account, accountsEnabled, onSignIn }: TopbarProps) {
+export function Topbar({ sectionTitle, sidebarOpen, onToggleSidebar, canExport, onExport, onImportFile, account, accountsEnabled, onSignIn, theme, onCycleTheme }: TopbarProps) {
+  const ThemeIcon = theme === "dark" ? Moon : theme === "light" ? Sun : Monitor;
+  const themeTitle = `${THEME_LABELS[theme].label}. Switch to ${THEME_LABELS[theme].next}`;
   const fileInput = useRef<HTMLInputElement>(null);
 
   function chooseFile(event: ChangeEvent<HTMLInputElement>) {
@@ -81,6 +92,9 @@ export function Topbar({ sectionTitle, sidebarOpen, onToggleSidebar, canExport, 
             )}
           </>
         )}
+        <button className="theme-button" onClick={onCycleTheme} aria-label={themeTitle} title={themeTitle}>
+          <ThemeIcon size={16} />
+        </button>
         <span className="topbar-divider" />
         <span className="date-label">YOUR PAINT DESK</span>
       </div>

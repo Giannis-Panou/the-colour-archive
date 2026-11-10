@@ -1,4 +1,4 @@
-import type { Collection, Mix, MixInput, SharePayload } from "../types";
+import type { Collection, Mix, MixInput, OwnedPaint, Project, Recipe, SharePayload } from "../types";
 
 export const UUID_PATTERN = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
 const HEX_COLOR = /^#[\da-f]{6}$/i;
@@ -44,8 +44,59 @@ export function isStoredMix(mix: unknown): mix is Mix {
   return isValidMix(mix)
     && isRecord(mix)
     && typeof mix.id === "string" && mix.id !== ""
-    && typeof mix.createdAt === "string" && !Number.isNaN(new Date(mix.createdAt).getTime());
+    && isDate(mix.createdAt)
+    && (mix.favorite === undefined || typeof mix.favorite === "boolean");
 }
+
+const isDate = (value: unknown) => typeof value === "string" && !Number.isNaN(new Date(value).getTime());
+const isId = (value: unknown) => typeof value === "string" && value !== "";
+const isStringList = (value: unknown) => Array.isArray(value) && value.every((item) => typeof item === "string");
+
+export const PAINT_STATUSES = ["have", "low", "want"] as const;
+
+export function isValidOwnedPaint(paint: unknown): paint is OwnedPaint {
+  return isRecord(paint)
+    && isId(paint.id)
+    && typeof paint.name === "string" && paint.name.trim() !== ""
+    && typeof paint.brand === "string"
+    && typeof paint.swatch === "string" && HEX_COLOR.test(paint.swatch)
+    && PAINT_STATUSES.includes(paint.status as OwnedPaint["status"])
+    && isDate(paint.createdAt);
+}
+
+export function isValidRecipe(recipe: unknown): recipe is Recipe {
+  return isRecord(recipe)
+    && isId(recipe.id)
+    && typeof recipe.name === "string"
+    && typeof recipe.notes === "string"
+    && isDate(recipe.createdAt)
+    && Array.isArray(recipe.steps)
+    && recipe.steps.every((step) => isRecord(step)
+      && typeof step.role === "string"
+      && (step.mixId === null || typeof step.mixId === "string")
+      && typeof step.paint === "string"
+      && typeof step.note === "string");
+}
+
+/** Project photos in browser storage and backups are embedded data URLs. */
+export function isValidProject(project: unknown): project is Project {
+  return isRecord(project)
+    && isId(project.id)
+    && typeof project.name === "string"
+    && typeof project.notes === "string"
+    && isDate(project.createdAt)
+    && isStringList(project.recipeIds)
+    && isStringList(project.mixIds)
+    && Array.isArray(project.photos)
+    && project.photos.every((photo) => isRecord(photo)
+      && isId(photo.id)
+      && typeof photo.image === "string" && isDataImage(photo.image)
+      && typeof photo.caption === "string"
+      && isDate(photo.addedAt));
+}
+
+/** The key two paint entries share when they're the same paint: brand and name, ignoring case and spacing. */
+export const paintKey = (brand: string, name: string) => `${brand.trim().toLowerCase()}|${name.trim().toLowerCase().replace(/\s+/g, " ")}`;
 
 export function isValidCollection(collection: unknown): collection is Collection {
   return isRecord(collection)
