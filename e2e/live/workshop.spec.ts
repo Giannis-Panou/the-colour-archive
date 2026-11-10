@@ -136,3 +136,48 @@ test("the database refuses bad values, duplicate paints and photos from another 
   const stolen = await call("/rest/v1/projects", { as: b, method: "POST", body: JSON.stringify({ name: "Stolen photo", photos: [{ id: "x", path: `${a.id}/project-x.jpg`, caption: "", added_at: new Date().toISOString() }] }) });
   expect(stolen.status).toBe(400);
 });
+
+test("selecting several mixes and paints deletes them from the account, photos included", async () => {
+  // Three mixes with a photo each, made through the app so their photos are real stored files.
+  await page.goto("/");
+  for (const name of ["Bulk one", "Bulk two", "Bulk keep"]) {
+    await page.getByRole("button", { name: /New colour mix/ }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByPlaceholder("e.g. Stormy midnight blue").fill(name);
+    await dialog.getByLabel("Paint name").fill(`${name} paint`);
+    await dialog.locator('input[type="file"]').setInputFiles(TWO_TONE);
+    await expect(dialog.locator(".color-sampler-canvas")).toBeVisible();
+    await dialog.getByRole("button", { name: /Save mix/ }).click();
+    await expect(dialog).toBeHidden();
+  }
+  const photoFiles = async () => ((await (await fetch(`${SUPABASE_URL}/storage/v1/object/list/mix-photos`, { method: "POST", headers: authHeaders(a), body: JSON.stringify({ prefix: a.id, limit: 100 }) })).json()) as { name: string }[])
+    .filter((file) => !file.name.startsWith("project-")).length;
+  const photosBefore = await photoFiles();
+
+  await page.getByRole("button", { name: "Select", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Select Bulk one" }).check();
+  await page.getByRole("checkbox", { name: "Select Bulk two" }).check();
+  await page.getByRole("region", { name: "Selection" }).getByRole("button", { name: "Delete" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete 2 mixes" }).click();
+  await expect(page.getByText("2 mixes removed from your archive.")).toBeVisible();
+
+  const names = rows((await call("/rest/v1/mixes?select=name", { as: a })).body).map((row) => row.name);
+  expect(names).toContain("Bulk keep");
+  expect(names).not.toContain("Bulk one");
+  expect(names).not.toContain("Bulk two");
+  expect(await photoFiles()).toBe(photosBefore - 2);
+
+  // Paints: add two from the mixes, then remove both at once.
+  await page.goto("/paints");
+  for (const name of ["Bulk keep paint", "Live bronze"]) {
+    const add = page.getByRole("button", { name: `I own ${name}` });
+    if (await add.count()) await add.click();
+  }
+  await page.getByRole("button", { name: "Select", exact: true }).click();
+  await page.getByRole("region", { name: "Selection" }).getByRole("button", { name: /Select all/ }).click();
+  const count = Number((await page.locator(".selection-count strong").innerText()).trim());
+  await page.getByRole("region", { name: "Selection" }).getByRole("button", { name: "Delete" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: /^Remove \d+ paints?$/ }).click();
+  await expect(page.getByText(`${count} ${count === 1 ? "paint" : "paints"} removed from My paints.`)).toBeVisible();
+  expect(rows((await call("/rest/v1/paints?select=id", { as: a })).body)).toEqual([]);
+});
