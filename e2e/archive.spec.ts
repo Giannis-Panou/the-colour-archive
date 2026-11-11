@@ -31,6 +31,15 @@ test.afterAll(async () => {
 });
 
 const card = (name: string) => page.locator(".mix-card", { hasText: name });
+/** Opens the Collections tab, then the collection with exactly this name. */
+async function openCollection(name: string) {
+  await page.getByRole("navigation", { name: "Workshop" }).getByRole("link", { name: "Collections" }).click();
+  await page.locator(".collection-card", { has: page.getByText(name, { exact: true }) }).click();
+}
+async function newCollection() {
+  await page.getByRole("navigation", { name: "Workshop" }).getByRole("link", { name: "Collections" }).click();
+  await page.getByRole("button", { name: /New collection/ }).first().click();
+}
 
 test("empty archive shows the welcome state and Export is disabled", async () => {
   await expect(page.getByText("Your next favourite")).toBeVisible();
@@ -158,7 +167,7 @@ test("a card switches between the photo and the saved colour", async () => {
 });
 
 test("creating a collection checks the name and opens it", async () => {
-  await page.getByRole("button", { name: /Add collection/ }).click();
+  await newCollection();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: /Create collection/ }).click();
   await expect(dialog.getByText("Give your collection a name")).toBeVisible();
@@ -172,8 +181,11 @@ test("creating a collection checks the name and opens it", async () => {
   await expect(page.locator("h1")).toHaveText(/^Cloaks/);
 });
 
-test("'Add collection' inside a collection starts a new one", async () => {
-  await page.getByRole("button", { name: /Add collection/ }).click();
+test("the Collections tab lists collections, and New collection starts empty", async () => {
+  await page.getByRole("link", { name: "All collections" }).click();
+  await expect(page).toHaveURL(/\/collections$/);
+  await expect(page.locator(".collection-card", { hasText: "Cloaks" })).toContainText("2 mixes");
+  await page.getByRole("button", { name: /New collection/ }).first().click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.locator("h2")).toHaveText(/^Add a collection/);
   await expect(dialog.getByPlaceholder("e.g. Woodland bases")).toHaveValue("");
@@ -181,8 +193,7 @@ test("'Add collection' inside a collection starts a new one", async () => {
 });
 
 test("collection names must be unique, ignoring capitals", async () => {
-  await page.getByRole("link", { name: "My archive", exact: true }).click();
-  await page.getByRole("button", { name: /Add collection/ }).click();
+  await newCollection();
   const dialog = page.getByRole("dialog");
   await dialog.getByPlaceholder("e.g. Woodland bases").fill("cloaks");
   await dialog.getByRole("button", { name: /Create collection/ }).click();
@@ -191,14 +202,16 @@ test("collection names must be unique, ignoring capitals", async () => {
 });
 
 test("Manage mixes changes which mixes are in a collection", async () => {
-  await page.locator(".collection-nav-item", { hasText: "Cloaks" }).click();
+  await openCollection("Cloaks");
   await page.getByRole("button", { name: /Manage mixes/ }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("checkbox").nth(2).check();
   await dialog.getByRole("button", { name: /Save collection/ }).click();
   await expect(page.getByText("Collection updated")).toBeVisible();
   await expect(page.locator(".mix-card")).toHaveCount(3);
-  await expect(page.locator(".collection-nav-item .nav-count").first()).toHaveText("3");
+  await page.getByRole("link", { name: "All collections" }).click();
+  await expect(page.locator(".collection-card", { hasText: "Cloaks" })).toContainText("3 mixes");
+  await page.getByRole("navigation", { name: "Workshop" }).getByRole("link", { name: "Mixes" }).click();
 });
 
 test("a deleted mix leaves its collections too", async () => {
@@ -239,7 +252,7 @@ test("a shared mix opens and can be saved", async () => {
 });
 
 test("a shared collection saves as '(shared)' when the name is taken", async () => {
-  await page.locator(".collection-nav-item", { hasText: "Cloaks" }).click();
+  await openCollection("Cloaks");
   const url = await shareFromDialog(page, page.getByRole("button", { name: /Share collection/ }));
   const opened = await openPage(url);
   await expect(opened.getByText("A COLLECTION TO EXPLORE")).toBeVisible();
@@ -307,9 +320,12 @@ test("Replace restores a backup into an empty browser", async () => {
 
 test("deleting a collection keeps its mixes", async () => {
   const before = (await stored(page)).mixes.length;
+  await openCollection("Cloaks (shared)");
   await page.getByRole("button", { name: "Delete collection Cloaks (shared)" }).click();
   await page.getByRole("button", { name: "Delete collection", exact: true }).click();
   await expect(page.getByText("was deleted")).toBeVisible();
+  // Deleting a collection returns to the list of collections.
+  await expect(page).toHaveURL(/\/collections$/);
   const current = await stored(page);
   expect(current.mixes).toHaveLength(before);
   expect(current.collections.map((collection) => collection.name)).not.toContain("Cloaks (shared)");
@@ -336,7 +352,7 @@ test("the logo returns to My archive, and Back returns to the collection", async
   await page.goto("/");
   await page.evaluate(() => localStorage.setItem("the-colour-archive-collections", JSON.stringify([{ id: "c9", name: "Logo test", mixIds: [] }])));
   await page.reload();
-  await page.locator(".collection-nav-item", { hasText: "Logo test" }).click();
+  await openCollection("Logo test");
   await expect(page).toHaveURL(/\/collections\/c9$/);
   await expect(page.locator("h1")).toHaveText(/^Logo test/);
   await page.getByRole("link", { name: /go to My archive/ }).click();
@@ -346,26 +362,27 @@ test("the logo returns to My archive, and Back returns to the collection", async
   await expect(page.locator("h1")).toHaveText(/^Logo test/);
 });
 
-test("unknown addresses and missing collections lead back to the archive", async () => {
+test("unknown addresses lead back to the archive, and a missing collection to the collections", async () => {
   await page.goto("/collections/does-not-exist");
-  await expect(page).toHaveURL("http://localhost:5173/");
+  await expect(page).toHaveURL("http://localhost:5173/collections");
   await page.goto("/no/such/page");
   await expect(page).toHaveURL("http://localhost:5173/");
   await page.goto("/profile");
   await expect(page).toHaveURL("http://localhost:5173/");
 });
 
-test("on a phone the collections drawer opens, closes after choosing, and nothing scrolls sideways", async ({ browser, baseURL }) => {
+test("on a phone the Collections tab opens the list, a card opens the collection, and nothing scrolls sideways", async ({ browser, baseURL }) => {
   const phone = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 } });
   const mobile = await phone.newPage();
   await mobile.goto("/");
   await mobile.evaluate(() => localStorage.setItem("the-colour-archive-collections", JSON.stringify([{ id: "c1", name: "Mobile set", mixIds: [] }])));
   await mobile.reload();
-  const toggle = mobile.getByRole("button", { name: "Toggle collections" });
-  await expect(toggle).toHaveAttribute("aria-expanded", "false");
-  await toggle.click();
-  await mobile.locator(".collection-nav-item", { hasText: "Mobile set" }).click();
-  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await mobile.getByRole("navigation", { name: "Workshop" }).getByRole("link", { name: "Collections" }).click();
+  await expect(mobile).toHaveURL(/\/collections$/);
+  expect(await mobile.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
+  await mobile.locator(".collection-card", { hasText: "Mobile set" }).click();
+  await expect(mobile).toHaveURL(/\/collections\/c1$/);
+  await expect(mobile.locator("h1")).toHaveText(/^Mobile set/);
   expect(await mobile.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
   await phone.close();
 });

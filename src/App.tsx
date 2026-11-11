@@ -21,13 +21,14 @@ import { useTheme } from "./hooks/useTheme";
 import { completeArchive, isArchiveEmpty } from "./lib/archive";
 import { createBackupFile, downloadBlob, MAX_BACKUP_FILE_SIZE, parseBackup } from "./lib/backup";
 import { imageToDataUrl } from "./lib/images";
-import { isNarrowScreen, isSidebarScreen } from "./lib/media";
+import { isSidebarScreen } from "./lib/media";
 import { paintsInUse, PaintShelf, shoppingList } from "./lib/paints";
 import { createCompressedLink, createShortLink, sharedMixes } from "./lib/sharing";
 import { clearLocalArchive, describeCounts, readLocalArchive } from "./lib/stores/localStore";
 import { hasStoredSession } from "./lib/supabase";
 import { isSharePhotoUrl, plural } from "./lib/validation";
 import { ArchivePage } from "./pages/ArchivePage";
+import { CollectionsPage } from "./pages/CollectionsPage";
 import { PaintsPage } from "./pages/PaintsPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { ProjectPage } from "./pages/ProjectPage";
@@ -73,7 +74,6 @@ export default function App() {
   const [viewingMixId, setViewingMixId] = useState<string | null>(null);
   const viewingMix = archive.mixes.find((mix) => mix.id === viewingMixId) ?? null;
   const viewMix = useCallback((mix: Mix) => setViewingMixId(mix.id), []);
-  const [collectionsExpanded, setCollectionsExpanded] = useState(() => !isNarrowScreen());
   const [sidebarOpen, setSidebarOpen] = useState(isSidebarScreen);
   const [shareError, setShareError] = useState("");
   const [backupError, setBackupError] = useState("");
@@ -81,6 +81,7 @@ export default function App() {
   const collectionMatch = useMatch("/collections/:collectionId");
   const onProfile = Boolean(useMatch("/profile"));
   const projectMatch = useMatch("/projects/:projectId");
+  const onCollections = Boolean(useMatch("/collections"));
   const onRecipes = Boolean(useMatch("/recipes"));
   const onProjects = Boolean(useMatch("/projects"));
   const onPaints = Boolean(useMatch("/paints"));
@@ -94,9 +95,8 @@ export default function App() {
 
   const sectionTitle = onProfile && auth.user ? "Profile"
     : selectedCollection?.name
-    ?? (onRecipes ? "Recipes" : onProjects ? "Projects" : projectMatch ? openProject?.name ?? "Project" : onPaints ? "My paints" : onShopping ? "Shopping list" : null);
+    ?? (onCollections ? "Collections" : onRecipes ? "Recipes" : onProjects ? "Projects" : projectMatch ? openProject?.name ?? "Project" : onPaints ? "My paints" : onShopping ? "Shopping list" : null);
   const closeDialog = useCallback(() => setDialog(null), []);
-  const closeDrawerOnNarrow = useCallback(() => { if (isNarrowScreen()) setCollectionsExpanded(false); }, []);
 
   // After signing in, offer once to move this browser's archive into the account.
   // `moveAnsweredFor` hides the offer for this visit once it's been answered or closed.
@@ -109,10 +109,10 @@ export default function App() {
     return isArchiveEmpty(local) ? null : local;
   }, [userId, archive.kind, archive.loading, archive.loadFailed, moveAnsweredFor]);
 
-  // Leaving a collection that no longer exists (deleted, replaced by an import) returns to the archive.
+  // Leaving a collection that no longer exists (deleted, replaced by an import) returns to the list.
   const missingCollection = Boolean(collectionMatch && !selectedCollection && !archive.loading);
   useEffect(() => {
-    if (missingCollection) navigate("/", { replace: true });
+    if (missingCollection) navigate("/collections", { replace: true });
   }, [missingCollection, navigate]);
 
   // ---------- Mixes ----------
@@ -151,7 +151,6 @@ export default function App() {
     if (!saved) return;
     setDialog(null);
     navigate(`/collections/${saved.id}`);
-    setCollectionsExpanded(!isNarrowScreen());
     showNotice(dialog.collection ? "Collection updated." : "Collection created.");
   }
 
@@ -160,6 +159,7 @@ export default function App() {
     const { collection } = dialog;
     if (!await archive.deleteCollection(collection.id)) return;
     setDialog(null);
+    navigate("/collections");
     showNotice(`“${collection.name}” was deleted. Its mixes are still in your archive.`);
   }
 
@@ -293,17 +293,7 @@ export default function App() {
 
   return (
     <div className={`app-shell ${sidebarOpen ? "" : "desktop-sidebar-collapsed"}`}>
-      <Sidebar
-        collections={archive.collections}
-        mixes={archive.mixes}
-        selectedCollectionId={selectedCollection?.id ?? null}
-        shoppingCount={shoppingCount}
-        expanded={collectionsExpanded}
-        onToggleExpanded={() => setCollectionsExpanded((expanded) => !expanded)}
-        onNavigate={closeDrawerOnNarrow}
-        onAddCollection={() => setDialog({ type: "collection", collection: null })}
-        onDeleteCollection={(collection) => setDialog({ type: "deleteCollection", collection })}
-      />
+      <Sidebar shoppingCount={shoppingCount} />
 
       <main className="main-content" id="archive">
         <Topbar
@@ -348,10 +338,24 @@ export default function App() {
                     onMatchColor={() => setDialog({ type: "match" })}
                     onShareCollection={(collection, mixes) => share({ kind: "collection", title: collection.name, mixes })}
                     onManageCollection={() => setDialog({ type: "collection", collection: selectedCollection })}
+                    onDeleteCollection={(collection) => setDialog({ type: "deleteCollection", collection })}
                   />
                 )}
               />
             ))}
+            <Route
+              path="/collections"
+              element={(
+                <CollectionsPage
+                  collections={archive.collections}
+                  mixes={archive.mixes}
+                  loading={archive.loading}
+                  errors={accountBanner}
+                  notice={notice}
+                  onNewCollection={() => setDialog({ type: "collection", collection: null })}
+                />
+              )}
+            />
             <Route path="/recipes" element={<RecipesPage archive={archive} shelf={shelf} errors={accountBanner} notice={notice} showNotice={showNotice} onViewMix={viewMix} />} />
             <Route path="/projects" element={<ProjectsPage archive={archive} errors={accountBanner} notice={notice} showNotice={showNotice} />} />
             <Route path="/projects/:projectId" element={<ProjectPage archive={archive} shelf={shelf} errors={accountBanner} notice={notice} showNotice={showNotice} onViewMix={viewMix} />} />

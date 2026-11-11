@@ -10,11 +10,11 @@ It works straight away in the browser with no account, and can be installed as a
 
 - **Mix records:** a name, a swatch colour, a list of paints (name, brand and number of drops) and notes for each mix.
 - **Photo colour sampling:** attach a photo of a painted model and click or drag on it to pick the swatch colour. A magnifier helps you aim, and you can also move the picker with the arrow keys and press Enter. Photos are scaled down to 1200 px and compressed to JPEG before they are saved.
-- **Collections:** group mixes into named collections (e.g. "Woodland bases"). Deleting a collection leaves its mixes in the archive.
+- **Collections:** group mixes into named collections (e.g. "Woodland bases"). Collections have their own tab: each card shows the colours inside, and opens a page where you can share the collection, change its mixes or delete it. Deleting a collection leaves its mixes in the archive.
 - **Search, filters and sorting:** search across mix names, notes, paint names and brands. Filter by colour family (reds, blues, browns, greys and so on), by a paint the mix uses, or to favourites only. Sort by newest, oldest, name, or round the colour wheel.
 - **Favourites:** star the mixes you use most. Starred mixes always sit at the top.
 - **Match a colour:** pick a colour from a reference photo, or choose one, and see your six closest mixes. Closeness is measured with CIEDE2000, which tracks how alike two colours look to the eye rather than how close their numbers are.
-- **Real addresses:** every page has its own address (`/collections/:id`, `/recipes`, `/projects/:id`, `/paints`, `/profile` and so on). You can bookmark them, and the browser's Back and Forward buttons work.
+- **Real addresses:** every page has its own address (`/collections`, `/collections/:id`, `/recipes`, `/projects/:id`, `/paints`, `/profile` and so on). You can bookmark them, and the browser's Back and Forward buttons work.
 
 ### Recipes, projects and My paints
 
@@ -68,12 +68,12 @@ Whoever opens a link can save the recipe to their own archive. Shared photos are
   - focus moves into a dialog when it opens, and Tab stays inside it;
   - Escape closes only the top dialog;
   - focus returns to the button that opened the dialog.
-- Responsive from phone to desktop: bottom tabs on phones (Mixes, Recipes, Projects, My paints, Collections), an icon rail on tablets, and a full, collapsible sidebar on desktops.
+- Responsive from phone to desktop: bottom tabs on phones (Mixes, Collections, Recipes, Projects, My paints), an icon rail on tablets, and a full, collapsible sidebar on desktops.
 
 ## Tech stack
 
 - [React 18](https://react.dev/) with [TypeScript](https://www.typescriptlang.org/) (strict), built with [Vite 6](https://vite.dev/)
-- [React Router 7](https://reactrouter.com/) for addresses: `/`, `/collections/:id`, `/recipes`, `/projects`, `/projects/:id`, `/paints`, `/paints/shopping`, `/profile`, `/s/:code`
+- [React Router 7](https://reactrouter.com/) for addresses: `/`, `/collections`, `/collections/:id`, `/recipes`, `/projects`, `/projects/:id`, `/paints`, `/paints/shopping`, `/profile`, `/s/:code`
 - A web app manifest and a hand-written service worker (`public/sw.js`) for installing and offline use
 - [Supabase](https://supabase.com/): Auth, Postgres with row-level security, and Storage
 - Hand-written CSS with custom properties (`src/styles/`), and [Lucide](https://lucide.dev/) icons
@@ -158,12 +158,12 @@ npm run test:live   # Playwright tests against the real Supabase project
     ├── main.tsx              # React root and router
     ├── App.tsx               # Routes, layout and the one open dialog
     ├── types.ts              # Mix, Collection, Recipe, Project, OwnedPaint, Archive, share types
-    ├── pages/                # ArchivePage, RecipesPage, ProjectsPage, ProjectPage, PaintsPage, ProfilePage
+    ├── pages/                # ArchivePage, CollectionsPage, RecipesPage, ProjectsPage, ProjectPage, PaintsPage, ProfilePage
     ├── components/
     │   ├── Modal.tsx         # Accessible dialog: focus trap, Escape, scroll lock, focus return
     │   ├── ConfirmDialog.tsx # Small confirm dialogs built on Modal
     │   ├── PageHeading.tsx   # The heading and banners every page starts with
-    │   ├── layout/           # Sidebar (Workshop and Collections), Topbar
+    │   ├── layout/           # Sidebar (the Workshop tabs), Topbar
     │   ├── mixes/            # MixCard, MixSwatch, PaintList, MixForm, ColorSampler, MatchDialog
     │   ├── recipes/          # RecipeCard, RecipeForm
     │   ├── projects/         # ProjectForm, PhotoDialog

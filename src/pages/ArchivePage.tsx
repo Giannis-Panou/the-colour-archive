@@ -1,5 +1,6 @@
-import { Archive, Beaker, Check, ChevronDown, Folder, ListChecks, LoaderCircle, Pipette, Plus, Search, Share2, Star, Trash2, X } from "lucide-react";
+import { Archive, ArrowLeft, Beaker, Check, ChevronDown, Folder, ListChecks, LoaderCircle, Pipette, Plus, Search, Share2, Star, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
+import { Link } from "react-router";
 import type { Collection, Mix } from "../types";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { MixCard } from "../components/mixes/MixCard";
@@ -48,12 +49,13 @@ interface ArchivePageProps {
   onMatchColor: () => void;
   onShareCollection: (collection: Collection, mixes: Mix[]) => void;
   onManageCollection: () => void;
+  onDeleteCollection: (collection: Collection) => void;
 }
 
 /** "My archive" and a single collection: heading, summary, filters, sort and the mix grid. */
 export function ArchivePage({
   mixes, collection, shelf, loading, loadFailed, errors, notice,
-  busy, onRetry, onNewMix, onEditMix, onViewMix, onDeleteMix, onDeleteMixes, onShareMix, onToggleFavorite, onMatchColor, onShareCollection, onManageCollection,
+  busy, onRetry, onNewMix, onEditMix, onViewMix, onDeleteMix, onDeleteMixes, onShareMix, onToggleFavorite, onMatchColor, onShareCollection, onManageCollection, onDeleteCollection,
 }: ArchivePageProps) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortOrder>("newest");
@@ -116,9 +118,10 @@ export function ArchivePage({
 
   return (
     <>
+      {collection && <Link className="back-link" to="/collections"><ArrowLeft size={15} /> All collections</Link>}
       <div className="page-heading">
         <div>
-          <div className="eyebrow"><span className="eyebrow-line" /> YOUR PERSONAL PAINT LIBRARY</div>
+          <div className="eyebrow"><span className="eyebrow-line" /> {collection ? "COLLECTION" : "YOUR PERSONAL PAINT LIBRARY"}</div>
           <h1>{title}<span className="heading-period">.</span></h1>
           <p className="heading-subtitle">{collection ? `A hand-picked collection of ${collectionMixes.length} ${collectionMixes.length === 1 ? "mix" : "mixes"}.` : "Every good colour has a story. Keep yours."}</p>
         </div>
@@ -161,6 +164,7 @@ export function ArchivePage({
               <>
                 <button className="sort-button" onClick={() => onShareCollection(collection, collectionMixes)}><Share2 size={15} /> Share collection</button>
                 <button className="sort-button" onClick={onManageCollection}><Plus size={15} /> Manage mixes</button>
+                <button className="sort-button danger" onClick={() => onDeleteCollection(collection)} aria-label={`Delete collection ${collection.name}`}><Trash2 size={15} /> Delete</button>
               </>
             )}
             {mixes.length > 0 && <button className="sort-button" onClick={onMatchColor}><Pipette size={15} /> Match a colour</button>}

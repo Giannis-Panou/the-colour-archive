@@ -470,13 +470,11 @@ test("dark mode also follows the device setting", async ({ browser, baseURL }) =
 test("on a phone, the bottom tabs reach every page without sideways scrolling", async () => {
   await page.setViewportSize({ width: 360, height: 760 });
   const tabs = page.getByRole("navigation", { name: "Workshop" });
-  for (const [name, url] of [["Recipes", /\/recipes$/], ["Projects", /\/projects$/], ["My paints", /\/paints$/], ["Mixes", /\/$/]] as const) {
+  for (const [name, url] of [["Collections", /\/collections$/], ["Recipes", /\/recipes$/], ["Projects", /\/projects$/], ["My paints", /\/paints$/], ["Mixes", /\/$/]] as const) {
     await tabs.getByRole("link", { name }).click();
     await expect(page).toHaveURL(url);
     // Polled, because the page slides over for 0.28 s when the window narrows and the sidebar hides.
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), { message: name }).toBeLessThanOrEqual(0);
   }
-  await page.getByRole("button", { name: "Toggle collections" }).click();
-  await expect(page.getByRole("navigation", { name: "Collections" })).toBeVisible();
   await page.setViewportSize({ width: 1280, height: 900 });
 });

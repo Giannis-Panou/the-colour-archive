@@ -120,7 +120,8 @@ test("a short link is a snapshot that ignores later edits", async ({ browser }) 
 });
 
 test("collections: create, change, delete, and deleting a mix removes its links", async () => {
-  await page.getByRole("button", { name: /Add collection/ }).click();
+  await page.getByRole("navigation", { name: "Workshop" }).getByRole("link", { name: "Collections" }).click();
+  await page.getByRole("button", { name: /New collection/ }).first().click();
   let dialog = page.getByRole("dialog");
   await dialog.getByPlaceholder("e.g. Woodland bases").fill("Cloud test set");
   await dialog.getByRole("checkbox").nth(0).check();

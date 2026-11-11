@@ -130,7 +130,9 @@ test("a backup full of script and __proto__ keys imports as plain data", async (
   await page.locator('input[type="file"][accept*="json"]').setInputFiles(file);
   await page.getByRole("button", { name: "Add to archive" }).click();
   await expect(page.getByText("Imported 4 mixes")).toBeVisible();
-  await page.locator(".collection-nav-item").first().click();
+  await page.getByRole("link", { name: "Collections" }).click();
+  expect(await inspect(page)).toMatchObject({ xss: undefined, injectedNodes: 0, polluted: undefined });
+  await page.locator(".collection-card").first().click();
   expect(await inspect(page)).toMatchObject({ xss: undefined, injectedNodes: 0, polluted: undefined });
 });
 
