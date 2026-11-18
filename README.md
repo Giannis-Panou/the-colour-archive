@@ -4,6 +4,31 @@ A personal archive for miniature paint mixes. Record the paints and drop ratios 
 
 It works straight away in the browser with no account, and can be installed as an app that opens offline. Sign in to sync your archive to the cloud and use it on any device.
 
+## Screenshots
+
+![My archive: summary cards, search, colour-family filters and the mix cards](docs/screenshots/archive.jpg)
+
+| | |
+|---|---|
+| ![A mix's details: the recipe with paints you don't own marked, notes, and where the mix is used](docs/screenshots/mix-details.jpg) | ![Match a colour: a colour sampled from a reference photo, with the closest mixes ranked by CIEDE2000](docs/screenshots/match-a-colour.jpg) |
+| **Mix details** — the full recipe, notes, and every collection, recipe and project that uses it | **Match a colour** — sample a reference photo and see your closest mixes, ranked by how alike they look |
+| ![Collections: each card shows the colours of the mixes inside](docs/screenshots/collections.jpg) | ![Recipes: step-by-step paint schemes from primer to varnish](docs/screenshots/recipes.jpg) |
+| **Collections** — mixes grouped for an army, a scheme or a commission | **Recipes** — whole schemes, step by step, using mixes or single paints |
+| ![A project with progress photos and the recipes it uses](docs/screenshots/project.jpg) | ![The shopping list: paints running low, on the wishlist, or missing from the shelf](docs/screenshots/shopping-list.jpg) |
+| **Projects** — the recipes for a model or army, with progress photos | **Shopping list** — worked out from My paints and the paints your mixes need |
+| ![My archive in dark mode](docs/screenshots/archive-dark.jpg) | |
+| **Dark mode** — follows the device, or set it from the top bar | |
+
+On a phone, the sections become bottom tabs:
+
+<p>
+  <img src="docs/screenshots/phone-archive.jpg" alt="My archive on a phone" width="260">
+  <img src="docs/screenshots/phone-recipes.jpg" alt="Recipes on a phone" width="260">
+  <img src="docs/screenshots/phone-paints.jpg" alt="My paints on a phone" width="260">
+</p>
+
+The screenshots use [`sample-workshop.json`](sample-workshop.json), so you can import it and see the same archive.
+
 ## Features
 
 ### Mixes and collections
@@ -145,6 +170,7 @@ npm run test:live   # Playwright tests against the real Supabase project
 ```
 ├── index.html                # HTML entry, fonts, manifest and meta tags
 ├── public/                   # sw.js (service worker), manifest, icons, theme.js
+├── docs/screenshots/         # The screenshots in this README
 ├── netlify.toml              # Netlify build, SPA redirect, security and cache headers
 ├── vite.config.ts            # Vite + React; Vitest settings
 ├── eslint.config.js          # ESLint with TypeScript and React Hooks rules
